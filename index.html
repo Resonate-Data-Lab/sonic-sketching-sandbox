@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sonic sketch</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="board"></div>
+
+  <button id="recordBtn" title="Record a sound" aria-label="Record a sound">
+    <span class="icon">+</span>
+  </button>
+  <button id="playAllBtn" title="Play the entire canvas, left to right" aria-label="Play entire canvas">
+    <span class="icon">▶</span>
+  </button>
+  <div id="timer" class="timer" hidden>0:00</div>
+
+  <div id="hint" class="hint">
+    click <strong>+</strong> to record &middot; drag a sound to move it &middot;
+    click it to play &middot; click the note below it to type &middot;
+    <strong>▶</strong> plays the whole canvas left to right
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="script.js" defer></script>
+</body>
+</html>
