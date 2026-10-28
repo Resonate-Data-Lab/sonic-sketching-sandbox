@@ -4,10 +4,19 @@ const board = document.getElementById('board');
 const recordBtn = document.getElementById('recordBtn');
 const recordIcon = recordBtn.querySelector('.icon');
 const playAllBtn = document.getElementById('playAllBtn');
+const playheadEl = document.getElementById('playhead');
 const timerEl = document.getElementById('timer');
 const toastEl = document.getElementById('toast');
+const addMenu = document.getElementById('addMenu');
+const fileInput = document.getElementById('fileInput');
+const penBtn = document.getElementById('penBtn');
+const drawPreview = document.getElementById('drawPreview');
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
 const CANVAS_PIXELS_PER_SECOND = 140;
+const DRAG_THRESHOLD = 4;
+
+let mode = 'pointer'; // 'pointer' | 'pen'
 
 let mediaRecorder = null;
 let activeStream = null;
@@ -16,25 +25,56 @@ let isRecording = false;
 let recordStartTime = 0;
 let timerHandle = null;
 let spawnIndex = 0;
+let playheadRAF = null;
 
 // ---------- feature check ----------
 
-const supported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
-if (!supported) {
-  recordBtn.disabled = true;
-  showToast("This browser can't record audio here. Try a recent Chrome, Firefox, Edge, or Safari.");
-}
+const micSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 
-// ---------- recording ----------
+// ---------- the "+" popover: record or upload ----------
 
 recordBtn.addEventListener('click', () => {
-  if (!supported) return;
   if (isRecording) {
     stopRecording();
-  } else {
-    startRecording();
+    return;
   }
+  addMenu.hidden = !addMenu.hidden;
 });
+
+document.addEventListener('pointerdown', (e) => {
+  if (addMenu.hidden) return;
+  if (addMenu.contains(e.target) || recordBtn.contains(e.target)) return;
+  addMenu.hidden = true;
+});
+
+addMenu.querySelector('[data-action="record"]').addEventListener('click', () => {
+  addMenu.hidden = true;
+  if (!micSupported) {
+    showToast("This browser can't record audio here. Try uploading a file instead.");
+    return;
+  }
+  startRecording();
+});
+
+addMenu.querySelector('[data-action="upload"]').addEventListener('click', () => {
+  addMenu.hidden = true;
+  fileInput.click();
+});
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  fileInput.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('audio/')) {
+    showToast('Please choose an audio file (wav, mp3, etc).');
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const { x, y } = nextSpawnPosition();
+  createSoundNode(x, y, url);
+});
+
+// ---------- recording ----------
 
 async function startRecording() {
   try {
@@ -114,6 +154,60 @@ function nextSpawnPosition() {
   };
 }
 
+// ---------- selection (sounds and strokes alike) & dragging ----------
+
+function clearSelection() {
+  document.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+}
+
+function makeDraggable(el, { onClick } = {}) {
+  let dragging = false;
+  let moved = false;
+  let start = { x: 0, y: 0 };
+  let startPositions = [];
+
+  el.addEventListener('pointerdown', (e) => {
+    if (mode !== 'pointer') return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (!el.classList.contains('selected')) {
+      clearSelection();
+      el.classList.add('selected');
+    }
+
+    dragging = true;
+    moved = false;
+    start = { x: e.clientX, y: e.clientY };
+    startPositions = Array.from(document.querySelectorAll('.selected')).map((item) => ({
+      item,
+      left: parseFloat(item.style.left),
+      top: parseFloat(item.style.top),
+    }));
+    el.setPointerCapture(e.pointerId);
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+    if (moved) {
+      startPositions.forEach(({ item, left, top }) => {
+        item.style.left = `${left + dx}px`;
+        item.style.top = `${top + dy}px`;
+      });
+    }
+  });
+
+  el.addEventListener('pointerup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    if (!moved && onClick) onClick();
+  });
+}
+
 // ---------- sound nodes: draggable, playable, annotatable ----------
 
 function createSoundNode(x, y, url) {
@@ -135,6 +229,10 @@ function createSoundNode(x, y, url) {
   del.textContent = '×';
   del.title = 'Delete this sound';
 
+  const dup = document.createElement('div');
+  dup.className = 'duplicate';
+  dup.title = 'Duplicate this sound';
+
   const note = document.createElement('div');
   note.className = 'note';
   note.contentEditable = 'true';
@@ -144,18 +242,16 @@ function createSoundNode(x, y, url) {
   const bars = document.createElement('div');
   bars.className = 'bars';
 
-  node.append(play, del, bars, note);
+  node.append(play, del, dup, bars, note);
   board.appendChild(node);
 
-  wireUpNode(node, del, note, bars);
+  wireUpNode(node, del, dup, note, bars);
+  return node;
 }
 
-function wireUpNode(node, del, note, bars) {
-  let dragging = false;
-  let moved = false;
-  let start = { x: 0, y: 0 };
-  let origin = { left: 0, top: 0 };
+function wireUpNode(node, del, dup, note, bars) {
   let activePlays = 0;
+  const activeAudios = [];
 
   function trigger() {
     activePlays++;
@@ -169,8 +265,10 @@ function wireUpNode(node, del, note, bars) {
     bars.appendChild(bar);
 
     const audio = new Audio(node.dataset.url);
+    activeAudios.push(audio);
     const finish = () => {
       bar.remove();
+      activeAudios.splice(activeAudios.indexOf(audio), 1);
       activePlays = Math.max(0, activePlays - 1);
       if (activePlays === 0) node.classList.remove('playing');
     };
@@ -194,40 +292,21 @@ function wireUpNode(node, del, note, bars) {
   // let the "play entire canvas" feature trigger this node the same way a click does
   node.triggerSound = trigger;
 
-  node.addEventListener('pointerdown', (e) => {
-    if (del.contains(e.target) || note.contains(e.target)) return;
-    dragging = true;
-    moved = false;
-    start = { x: e.clientX, y: e.clientY };
-    origin = { left: parseFloat(node.style.left), top: parseFloat(node.style.top) };
-    node.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
+  makeDraggable(node, { onClick: trigger });
 
-  node.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
-    if (moved) {
-      node.style.left = `${origin.left + dx}px`;
-      node.style.top = `${origin.top + dy}px`;
-    }
-  });
-
-  node.addEventListener('pointerup', (e) => {
-    if (!dragging) return;
-    dragging = false;
-    if (node.hasPointerCapture(e.pointerId)) node.releasePointerCapture(e.pointerId);
-    if (!moved) trigger();
-  });
-
-  // keep clicks/typing in the note or the delete button from starting a drag or a play
+  // keep clicks/typing in the note, delete, or duplicate controls from starting a drag or a play
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
     e.stopPropagation();
+    activeAudios.forEach((audio) => audio.pause());
     URL.revokeObjectURL(node.dataset.url);
     node.remove();
+  });
+
+  dup.addEventListener('pointerdown', (e) => e.stopPropagation());
+  dup.addEventListener('click', (e) => {
+    e.stopPropagation();
+    duplicateNode(node, note);
   });
 
   note.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -238,6 +317,175 @@ function wireUpNode(node, del, note, bars) {
       note.blur();
     }
   });
+}
+
+// ---------- duplicating a sound ----------
+
+async function duplicateNode(sourceNode, sourceNote) {
+  try {
+    const blob = await (await fetch(sourceNode.dataset.url)).blob();
+    const url = URL.createObjectURL(blob);
+    const x = parseFloat(sourceNode.style.left) + 30;
+    const y = parseFloat(sourceNode.style.top) + 30;
+    const newNode = createSoundNode(x, y, url);
+    const newNote = newNode.querySelector('.note');
+    if (newNote) newNote.textContent = sourceNote.textContent;
+  } catch (err) {
+    showToast('Could not duplicate that sound.');
+  }
+}
+
+// ---------- the pen tool: draw a doodle, drag it, delete/duplicate it ----------
+
+function setMode(next) {
+  mode = mode === next ? 'pointer' : next;
+  penBtn.classList.toggle('active', mode === 'pen');
+  board.style.cursor = mode === 'pen' ? 'crosshair' : '';
+  document.body.classList.toggle('pen-active', mode === 'pen');
+  if (mode !== 'pointer') clearSelection();
+}
+
+penBtn.addEventListener('click', () => setMode('pen'));
+
+board.addEventListener('pointerdown', (e) => {
+  if (mode === 'pen') {
+    startStroke(e);
+  } else {
+    startMarquee(e);
+  }
+});
+
+function startMarquee(e) {
+  e.preventDefault();
+  const keepSelected = e.shiftKey ? new Set(document.querySelectorAll('.selected')) : new Set();
+  if (!e.shiftKey) clearSelection();
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const box = document.createElement('div');
+  box.className = 'marquee';
+  board.appendChild(box);
+
+  function updateBox(cx, cy) {
+    const x = Math.min(startX, cx);
+    const y = Math.min(startY, cy);
+    const w = Math.abs(cx - startX);
+    const h = Math.abs(cy - startY);
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
+    box.style.width = `${w}px`;
+    box.style.height = `${h}px`;
+    return { left: x, top: y, right: x + w, bottom: y + h };
+  }
+
+  function applySelection(rect) {
+    document.querySelectorAll('.sound-node, .stroke').forEach((item) => {
+      const r = item.getBoundingClientRect();
+      const intersects = !(r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom);
+      item.classList.toggle('selected', intersects || keepSelected.has(item));
+    });
+  }
+
+  applySelection(updateBox(startX, startY));
+
+  function onMove(ev) {
+    applySelection(updateBox(ev.clientX, ev.clientY));
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    box.remove();
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
+
+function pointsToPathData(points, offsetX, offsetY) {
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x - offsetX} ${p.y - offsetY}`).join(' ');
+}
+
+function startStroke(e) {
+  e.preventDefault();
+  const points = [{ x: e.clientX, y: e.clientY }];
+  const previewPath = document.createElementNS(SVG_NS, 'path');
+  previewPath.setAttribute('d', pointsToPathData(points, 0, 0));
+  drawPreview.appendChild(previewPath);
+
+  function onMove(ev) {
+    points.push({ x: ev.clientX, y: ev.clientY });
+    previewPath.setAttribute('d', pointsToPathData(points, 0, 0));
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    previewPath.remove();
+    finalizeStroke(points);
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
+
+function finalizeStroke(points) {
+  if (points.length < 2) return;
+
+  const pad = 6;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs) - pad;
+  const minY = Math.min(...ys) - pad;
+  const width = Math.max(...xs) + pad - minX;
+  const height = Math.max(...ys) + pad - minY;
+  const pathD = pointsToPathData(points, minX, minY);
+
+  createStrokeElement(minX, minY, width, height, pathD);
+}
+
+function createStrokeElement(left, top, width, height, pathD) {
+  const strokeEl = document.createElement('div');
+  strokeEl.className = 'stroke';
+  strokeEl.style.left = `${left}px`;
+  strokeEl.style.top = `${top}px`;
+  strokeEl.style.width = `${width}px`;
+  strokeEl.style.height = `${height}px`;
+
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', pathD);
+  svg.appendChild(path);
+
+  const del = document.createElement('div');
+  del.className = 'delete';
+  del.textContent = '×';
+  del.title = 'Delete this doodle';
+
+  const dup = document.createElement('div');
+  dup.className = 'duplicate';
+  dup.title = 'Duplicate this doodle';
+
+  strokeEl.append(svg, del, dup);
+  board.appendChild(strokeEl);
+
+  makeDraggable(strokeEl);
+
+  del.addEventListener('pointerdown', (e) => e.stopPropagation());
+  del.addEventListener('click', (e) => {
+    e.stopPropagation();
+    strokeEl.remove();
+  });
+
+  dup.addEventListener('pointerdown', (e) => e.stopPropagation());
+  dup.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const currentLeft = parseFloat(strokeEl.style.left) + 30;
+    const currentTop = parseFloat(strokeEl.style.top) + 30;
+    createStrokeElement(currentLeft, currentTop, width, height, pathD);
+  });
+
+  return strokeEl;
 }
 
 // ---------- play the entire canvas, left to right ----------
@@ -266,6 +514,23 @@ playAllBtn.addEventListener('click', () => {
       });
     }, delay);
   });
+
+  if (playheadRAF) cancelAnimationFrame(playheadRAF);
+  const playbackStart = performance.now();
+  playheadEl.style.left = `${originX}px`;
+  playheadEl.classList.add('active');
+
+  function stepPlayhead() {
+    const elapsedSeconds = (performance.now() - playbackStart) / 1000;
+    playheadEl.style.left = `${originX + elapsedSeconds * CANVAS_PIXELS_PER_SECOND}px`;
+    if (pending > 0) {
+      playheadRAF = requestAnimationFrame(stepPlayhead);
+    } else {
+      playheadEl.classList.remove('active');
+      playheadRAF = null;
+    }
+  }
+  playheadRAF = requestAnimationFrame(stepPlayhead);
 });
 
 // ---------- toast ----------

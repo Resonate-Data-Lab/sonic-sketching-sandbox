@@ -30,6 +30,40 @@ html, body {
   touch-action: none;
 }
 
+/* --- the playhead for "play entire canvas" mode --- */
+#playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.16);
+  z-index: 2;
+  pointer-events: none;
+  display: none;
+}
+
+#playhead.active {
+  display: block;
+}
+
+/* --- the live preview while a pen stroke is being drawn --- */
+#drawPreview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 15;
+}
+
+#drawPreview path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* --- the "+" record button --- */
 #recordBtn {
   position: fixed;
@@ -83,6 +117,45 @@ html, body {
   50% { box-shadow: 2px 3px 0 rgba(0,0,0,0.12), 0 0 0 10px rgba(217,83,79,0); }
 }
 
+/* --- the popover that appears when you click "+" --- */
+.add-menu[hidden] {
+  display: none;
+}
+
+.add-menu {
+  position: fixed;
+  top: 80px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--paper);
+  border: 2px dashed var(--ink);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.12);
+  z-index: 55;
+}
+
+.add-menu-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.add-menu-option:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 #playAllBtn {
   position: fixed;
   top: 20px;
@@ -118,10 +191,48 @@ html, body {
   color: #fff;
 }
 
+.tool-btn {
+  position: fixed;
+  top: 20px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  transition: transform 0.12s ease;
+  user-select: none;
+}
+
+.tool-btn:hover {
+  transform: scale(1.06) rotate(2deg);
+}
+
+.tool-btn:active {
+  transform: scale(0.95);
+}
+
+.tool-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+#penBtn {
+  left: 148px;
+}
+
 #timer {
   position: fixed;
   top: 28px;
-  left: 146px;
+  left: 212px;
   font-size: 13px;
   color: var(--accent);
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -202,7 +313,8 @@ html, body {
   100% { box-shadow: 2px 3px 0 rgba(0,0,0,0.1), 0 0 0 14px rgba(217,83,79,0); }
 }
 
-.sound-node .delete {
+.sound-node .delete,
+.stroke .delete {
   position: absolute;
   top: -8px;
   right: -8px;
@@ -221,7 +333,52 @@ html, body {
   pointer-events: auto;
 }
 
-.sound-node:hover .delete {
+.sound-node .duplicate,
+.stroke .duplicate {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.5px solid var(--pencil);
+  display: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.sound-node .duplicate::before,
+.sound-node .duplicate::after,
+.stroke .duplicate::before,
+.stroke .duplicate::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.3px solid var(--pencil);
+  background: var(--paper);
+}
+
+.sound-node .duplicate::before,
+.stroke .duplicate::before {
+  top: 3.5px;
+  left: 3.5px;
+  z-index: 1;
+}
+
+.sound-node .duplicate::after,
+.stroke .duplicate::after {
+  top: 7px;
+  left: 7px;
+  z-index: 2;
+}
+
+.sound-node:hover .delete,
+.sound-node:hover .duplicate,
+.stroke:hover .delete,
+.stroke:hover .duplicate {
   display: flex;
 }
 
@@ -272,4 +429,65 @@ html, body {
 .sound-node .note:empty::before {
   content: attr(data-placeholder);
   color: #b9b2a0;
+}
+
+/* --- a pen stroke: its own small draggable doodle, same controls as a sound --- */
+.stroke {
+  position: absolute;
+  cursor: grab;
+  touch-action: none;
+  z-index: 6;
+}
+
+.stroke:active {
+  cursor: grabbing;
+}
+
+.stroke svg {
+  display: block;
+  pointer-events: none;
+}
+
+.stroke path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.stroke:hover path {
+  stroke: var(--accent);
+}
+
+.stroke.selected path {
+  stroke: var(--accent);
+}
+
+.sound-node.selected {
+  border-color: var(--accent);
+}
+
+/* --- the rubber-band selection box --- */
+.marquee {
+  position: absolute;
+  border: 1px dashed var(--pencil);
+  background: rgba(217, 83, 79, 0.08);
+  pointer-events: none;
+  z-index: 60;
+}
+
+/* --- while the pen is active, nothing else on the canvas is interactive,
+   so a stroke can always be drawn even on top of another object --- */
+body.pen-active .sound-node,
+body.pen-active .stroke {
+  pointer-events: none;
+}
+
+body.pen-active .sound-node .delete,
+body.pen-active .sound-node .duplicate,
+body.pen-active .sound-node .note,
+body.pen-active .stroke .delete,
+body.pen-active .stroke .duplicate {
+  pointer-events: none;
 }

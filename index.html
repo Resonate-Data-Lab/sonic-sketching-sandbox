@@ -8,20 +8,36 @@
 </head>
 <body>
 
-  <div id="board"></div>
+  <div id="board">
+    <div id="playhead"></div>
+    <svg id="drawPreview"></svg>
+  </div>
 
-  <button id="recordBtn" title="Record a sound" aria-label="Record a sound">
+  <button id="recordBtn" title="Add a sound" aria-label="Add a sound">
     <span class="icon">+</span>
   </button>
+  <div id="addMenu" class="add-menu" hidden>
+    <button type="button" class="add-menu-option" data-action="record">● record</button>
+    <button type="button" class="add-menu-option" data-action="upload">⇪ upload</button>
+  </div>
+  <input type="file" id="fileInput" accept="audio/*,.wav,.mp3" hidden />
+
   <button id="playAllBtn" title="Play the entire canvas, left to right" aria-label="Play entire canvas">
     <span class="icon">▶</span>
   </button>
+
+  <button id="penBtn" class="tool-btn" title="Pen: draw a doodle or arrow" aria-label="Pen tool">
+    <span class="icon">✎</span>
+  </button>
+
   <div id="timer" class="timer" hidden>0:00</div>
 
   <div id="hint" class="hint">
-    click <strong>+</strong> to record &middot; drag a sound to move it &middot;
+    click <strong>+</strong> to record or upload a sound &middot; drag a sound to move it &middot;
     click it to play &middot; click the note below it to type &middot;
-    <strong>▶</strong> plays the whole canvas left to right
+    <strong>▶</strong> plays the whole canvas &middot;
+    <strong>✎</strong> draw a doodle, then drag/delete/duplicate it like a sound &middot;
+    drag empty canvas to select multiple
   </div>
 
   <div id="toast" class="toast" hidden></div>
