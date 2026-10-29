@@ -26,6 +26,8 @@ let recordStartTime = 0;
 let timerHandle = null;
 let spawnIndex = 0;
 let playheadRAF = null;
+let clipboard = null;
+let pasteGeneration = 0;
 
 // ---------- feature check ----------
 
@@ -48,15 +50,39 @@ document.addEventListener('pointerdown', (e) => {
   addMenu.hidden = true;
 });
 
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+// a focused note (contenteditable) otherwise never loses focus when you click
+// away from it, since sound nodes/strokes/the board aren't themselves focusable —
+// that stale focus would otherwise silently swallow Delete/Cmd+C/Cmd+V as "typing"
+document.addEventListener('pointerdown', (e) => {
   const active = document.activeElement;
-  if (active && (active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+  if (active && active.classList && active.classList.contains('note') && !active.contains(e.target)) {
+    active.blur();
+  }
+});
 
-  const selected = Array.from(document.querySelectorAll('.selected'));
-  if (selected.length === 0) return;
-  e.preventDefault();
-  selected.forEach((el) => (el.deleteSound ? el.deleteSound() : el.remove()));
+document.addEventListener('keydown', (e) => {
+  const active = document.activeElement;
+  const isTyping = active && (active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+  if (isTyping) return;
+
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    const selected = Array.from(document.querySelectorAll('.selected'));
+    if (selected.length === 0) return;
+    e.preventDefault();
+    selected.forEach((el) => (el.deleteSound ? el.deleteSound() : el.remove()));
+    return;
+  }
+
+  const withModifier = e.ctrlKey || e.metaKey;
+  if (withModifier && e.key.toLowerCase() === 'c') {
+    if (document.querySelectorAll('.selected').length === 0) return;
+    e.preventDefault();
+    copySelection();
+  } else if (withModifier && e.key.toLowerCase() === 'v') {
+    if (!clipboard) return;
+    e.preventDefault();
+    pasteClipboard();
+  }
 });
 
 addMenu.querySelector('[data-action="record"]').addEventListener('click', () => {
@@ -170,6 +196,77 @@ function nextSpawnPosition() {
 
 function clearSelection() {
   document.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+}
+
+// ---------- copy & paste a mixed selection of sounds and doodles ----------
+
+async function copySelection() {
+  const selected = Array.from(document.querySelectorAll('.selected'));
+  if (selected.length === 0) return;
+
+  const anchorX = Math.min(...selected.map((el) => parseFloat(el.style.left)));
+  const anchorY = Math.min(...selected.map((el) => parseFloat(el.style.top)));
+
+  try {
+    const items = await Promise.all(
+      selected.map(async (el) => {
+        const relX = parseFloat(el.style.left) - anchorX;
+        const relY = parseFloat(el.style.top) - anchorY;
+
+        if (el.classList.contains('sound-node')) {
+          const blob = await (await fetch(el.dataset.url)).blob();
+          const note = el.querySelector('.note');
+          return { type: 'sound', relX, relY, blob, noteText: note ? note.textContent : '' };
+        }
+        if (el.classList.contains('stroke')) {
+          const path = el.querySelector('path');
+          return {
+            type: 'stroke',
+            relX,
+            relY,
+            width: parseFloat(el.style.width),
+            height: parseFloat(el.style.height),
+            pathD: path.getAttribute('d'),
+          };
+        }
+        return null;
+      })
+    );
+
+    clipboard = { anchorX, anchorY, items: items.filter(Boolean) };
+    pasteGeneration = 0;
+  } catch (err) {
+    showToast('Could not copy that selection.');
+  }
+}
+
+function pasteClipboard() {
+  if (!clipboard) return;
+  pasteGeneration++;
+  const dx = 30 * pasteGeneration;
+  const dy = 30 * pasteGeneration;
+
+  const pasted = clipboard.items
+    .map((item) => {
+      const x = clipboard.anchorX + item.relX + dx;
+      const y = clipboard.anchorY + item.relY + dy;
+
+      if (item.type === 'sound') {
+        const url = URL.createObjectURL(item.blob);
+        const node = createSoundNode(x, y, url);
+        const note = node.querySelector('.note');
+        if (note) note.textContent = item.noteText;
+        return node;
+      }
+      if (item.type === 'stroke') {
+        return createStrokeElement(x, y, item.width, item.height, item.pathD);
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  clearSelection();
+  pasted.forEach((el) => el.classList.add('selected'));
 }
 
 function makeDraggable(el, { onClick } = {}) {
