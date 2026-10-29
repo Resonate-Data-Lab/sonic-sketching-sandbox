@@ -47,6 +47,17 @@ document.addEventListener('pointerdown', (e) => {
   addMenu.hidden = true;
 });
 
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  const active = document.activeElement;
+  if (active && (active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+
+  const selected = Array.from(document.querySelectorAll('.selected'));
+  if (selected.length === 0) return;
+  e.preventDefault();
+  selected.forEach((el) => (el.deleteSound ? el.deleteSound() : el.remove()));
+});
+
 addMenu.querySelector('[data-action="record"]').addEventListener('click', () => {
   addMenu.hidden = true;
   if (!micSupported) {
@@ -292,15 +303,20 @@ function wireUpNode(node, del, dup, note, bars) {
   // let the "play entire canvas" feature trigger this node the same way a click does
   node.triggerSound = trigger;
 
+  // shared by the "x" button and the Delete/Backspace key on a selection
+  node.deleteSound = () => {
+    activeAudios.forEach((audio) => audio.pause());
+    URL.revokeObjectURL(node.dataset.url);
+    node.remove();
+  };
+
   makeDraggable(node, { onClick: trigger });
 
   // keep clicks/typing in the note, delete, or duplicate controls from starting a drag or a play
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
     e.stopPropagation();
-    activeAudios.forEach((audio) => audio.pause());
-    URL.revokeObjectURL(node.dataset.url);
-    node.remove();
+    node.deleteSound();
   });
 
   dup.addEventListener('pointerdown', (e) => e.stopPropagation());

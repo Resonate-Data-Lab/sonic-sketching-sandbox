@@ -159,7 +159,7 @@ html, body {
 #playAllBtn {
   position: fixed;
   top: 20px;
-  left: 84px;
+  left: 148px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -197,7 +197,7 @@ html, body {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  border: 2.5px solid var(--ink);
+  border: 2.5px dashed var(--ink);
   background: var(--paper);
   color: var(--ink);
   font-size: 18px;
@@ -220,13 +220,14 @@ html, body {
 }
 
 .tool-btn.active {
+  border-style: solid;
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
 
 #penBtn {
-  left: 148px;
+  left: 84px;
 }
 
 #timer {

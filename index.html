@@ -22,12 +22,12 @@
   </div>
   <input type="file" id="fileInput" accept="audio/*,.wav,.mp3" hidden />
 
-  <button id="playAllBtn" title="Play the entire canvas, left to right" aria-label="Play entire canvas">
-    <span class="icon">▶</span>
-  </button>
-
   <button id="penBtn" class="tool-btn" title="Pen: draw a doodle or arrow" aria-label="Pen tool">
     <span class="icon">✎</span>
+  </button>
+
+  <button id="playAllBtn" title="Play the entire canvas, left to right" aria-label="Play entire canvas">
+    <span class="icon">▶</span>
   </button>
 
   <div id="timer" class="timer" hidden>0:00</div>
@@ -35,9 +35,9 @@
   <div id="hint" class="hint">
     click <strong>+</strong> to record or upload a sound &middot; drag a sound to move it &middot;
     click it to play &middot; click the note below it to type &middot;
-    <strong>▶</strong> plays the whole canvas &middot;
     <strong>✎</strong> draw a doodle, then drag/delete/duplicate it like a sound &middot;
-    drag empty canvas to select multiple
+    <strong>▶</strong> plays the whole canvas &middot;
+    drag empty canvas to select multiple &middot; delete key removes selection
   </div>
 
   <div id="toast" class="toast" hidden></div>
