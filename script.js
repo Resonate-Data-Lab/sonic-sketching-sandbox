@@ -176,6 +176,7 @@ function makeDraggable(el, { onClick } = {}) {
   let dragging = false;
   let moved = false;
   let start = { x: 0, y: 0 };
+  let dragGroup = [];
   let startPositions = [];
 
   el.addEventListener('pointerdown', (e) => {
@@ -183,15 +184,13 @@ function makeDraggable(el, { onClick } = {}) {
     e.stopPropagation();
     e.preventDefault();
 
-    if (!el.classList.contains('selected')) {
-      clearSelection();
-      el.classList.add('selected');
-    }
-
     dragging = true;
     moved = false;
     start = { x: e.clientX, y: e.clientY };
-    startPositions = Array.from(document.querySelectorAll('.selected')).map((item) => ({
+
+    // drag the existing selection if this item is already part of one, otherwise just this item
+    dragGroup = el.classList.contains('selected') ? Array.from(document.querySelectorAll('.selected')) : [el];
+    startPositions = dragGroup.map((item) => ({
       item,
       left: parseFloat(item.style.left),
       top: parseFloat(item.style.top),
@@ -203,7 +202,11 @@ function makeDraggable(el, { onClick } = {}) {
     if (!dragging) return;
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
-    if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+    if (!moved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      moved = true;
+      // only show the "selected" highlight once this is an actual move, not a plain click
+      dragGroup.forEach((item) => item.classList.add('selected'));
+    }
     if (moved) {
       startPositions.forEach(({ item, left, top }) => {
         item.style.left = `${left + dx}px`;
