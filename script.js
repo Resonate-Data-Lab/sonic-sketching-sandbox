@@ -34,6 +34,7 @@ const micSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUser
 // ---------- the "+" popover: record or upload ----------
 
 recordBtn.addEventListener('click', () => {
+  if (mode === 'pen') setMode('pen');
   if (isRecording) {
     stopRecording();
     return;
@@ -215,7 +216,11 @@ function makeDraggable(el, { onClick } = {}) {
     if (!dragging) return;
     dragging = false;
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
-    if (!moved && onClick) onClick();
+    if (moved) {
+      clearSelection();
+    } else if (onClick) {
+      onClick();
+    }
   });
 }
 
