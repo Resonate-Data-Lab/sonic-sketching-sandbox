@@ -11,10 +11,16 @@ const addMenu = document.getElementById('addMenu');
 const fileInput = document.getElementById('fileInput');
 const penBtn = document.getElementById('penBtn');
 const drawPreview = document.getElementById('drawPreview');
+const shareBtn = document.getElementById('shareBtn');
+const sharePopup = document.getElementById('sharePopup');
+const shareLinkInput = document.getElementById('shareLink');
+const copyLinkBtn = document.getElementById('copyLinkBtn');
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CANVAS_PIXELS_PER_SECOND = 140;
 const DRAG_THRESHOLD = 4;
+const AUTOSAVE_DEBOUNCE_MS = 1500;
+const MAX_SKETCH_BYTES = 4 * 1024 * 1024; // stay under Vercel's 4.5MB function body limit
 
 let mode = 'pointer'; // 'pointer' | 'pen'
 
@@ -28,6 +34,9 @@ let spawnIndex = 0;
 let playheadRAF = null;
 let clipboard = null;
 let pasteGeneration = 0;
+let currentSketchId = null;
+let isLoadingSketch = false;
+let autosaveTimer = null;
 
 // ---------- feature check ----------
 
@@ -318,6 +327,7 @@ function makeDraggable(el, { onClick } = {}) {
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (moved) {
       clearSelection();
+      scheduleAutosave();
     } else if (onClick) {
       onClick();
     }
@@ -362,6 +372,7 @@ function createSoundNode(x, y, url) {
   board.appendChild(node);
 
   wireUpNode(node, del, dup, note, bars);
+  scheduleAutosave();
   return node;
 }
 
@@ -413,6 +424,7 @@ function wireUpNode(node, del, dup, note, bars) {
     activeAudios.forEach((audio) => audio.pause());
     URL.revokeObjectURL(node.dataset.url);
     node.remove();
+    scheduleAutosave();
   };
 
   makeDraggable(node, { onClick: trigger });
@@ -432,6 +444,7 @@ function wireUpNode(node, del, dup, note, bars) {
 
   note.addEventListener('pointerdown', (e) => e.stopPropagation());
   note.addEventListener('click', (e) => e.stopPropagation());
+  note.addEventListener('input', scheduleAutosave);
   note.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -596,6 +609,7 @@ function createStrokeElement(left, top, width, height, pathD) {
   del.addEventListener('click', (e) => {
     e.stopPropagation();
     strokeEl.remove();
+    scheduleAutosave();
   });
 
   dup.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -606,8 +620,198 @@ function createStrokeElement(left, top, width, height, pathD) {
     createStrokeElement(currentLeft, currentTop, width, height, pathD);
   });
 
+  scheduleAutosave();
   return strokeEl;
 }
+
+// ---------- sharing: serialize the canvas to JSON and back ----------
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(base64, mimeType) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
+async function serializeCanvas() {
+  const elements = Array.from(document.querySelectorAll('.sound-node, .stroke'));
+
+  const nodes = await Promise.all(
+    elements.map(async (el) => {
+      const x = parseFloat(el.style.left);
+      const y = parseFloat(el.style.top);
+
+      if (el.classList.contains('sound-node')) {
+        const blob = await (await fetch(el.dataset.url)).blob();
+        const base64 = await blobToBase64(blob);
+        const rotationMatch = el.style.transform.match(/rotate\(([-\d.]+)deg\)/);
+        const note = el.querySelector('.note');
+        return {
+          type: 'sound',
+          x,
+          y,
+          rotation: rotationMatch ? parseFloat(rotationMatch[1]) : 0,
+          note: note ? note.textContent : '',
+          audio: { mimeType: blob.type || 'audio/webm', base64 },
+        };
+      }
+
+      const path = el.querySelector('path');
+      return {
+        type: 'stroke',
+        x,
+        y,
+        width: parseFloat(el.style.width),
+        height: parseFloat(el.style.height),
+        pathD: path.getAttribute('d'),
+      };
+    })
+  );
+
+  return { version: 1, nodes };
+}
+
+function deserializeCanvas(data) {
+  document.querySelectorAll('.sound-node, .stroke').forEach((el) => el.remove());
+
+  const nodes = (data && data.nodes) || [];
+  nodes.forEach((n) => {
+    if (n.type === 'sound') {
+      const blob = base64ToBlob(n.audio.base64, n.audio.mimeType);
+      const url = URL.createObjectURL(blob);
+      const node = createSoundNode(n.x, n.y, url);
+      node.style.transform = `rotate(${n.rotation || 0}deg)`;
+      const note = node.querySelector('.note');
+      if (note) note.textContent = n.note || '';
+    } else if (n.type === 'stroke') {
+      createStrokeElement(n.x, n.y, n.width, n.height, n.pathD);
+    }
+  });
+
+  // reduce (not fully eliminate) new recordings landing on top of restored ones
+  spawnIndex = nodes.filter((n) => n.type === 'sound').length;
+}
+
+// ---------- sharing: save to a link, load from a link, autosave ----------
+
+async function loadSketchFromURL() {
+  const id = new URLSearchParams(location.search).get('sketch');
+  if (!id) return;
+
+  isLoadingSketch = true;
+  try {
+    const res = await fetch(`/api/sketch/${id}`);
+    if (!res.ok) {
+      showToast("That sketch link doesn't exist anymore.");
+      return;
+    }
+    const data = await res.json();
+    deserializeCanvas(data);
+    currentSketchId = id;
+  } catch (err) {
+    showToast('Could not load that sketch.');
+  } finally {
+    isLoadingSketch = false;
+  }
+}
+
+function scheduleAutosave() {
+  if (isLoadingSketch || !currentSketchId) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveSketch, AUTOSAVE_DEBOUNCE_MS);
+}
+
+async function saveSketch() {
+  if (!currentSketchId) return;
+  const data = await serializeCanvas();
+  if (JSON.stringify(data).length > MAX_SKETCH_BYTES) {
+    showToast('This sketch got too large to save — try shorter recordings.');
+    return;
+  }
+  try {
+    await fetch(`/api/sketch/${currentSketchId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  } catch (err) {
+    showToast('Could not save changes.');
+  }
+}
+
+function showSharePopup(url) {
+  shareLinkInput.value = url;
+  sharePopup.hidden = false;
+  shareLinkInput.focus();
+  shareLinkInput.select();
+}
+
+shareBtn.addEventListener('click', async () => {
+  if (currentSketchId) {
+    await saveSketch();
+    showSharePopup(`${location.origin}${location.pathname}?sketch=${currentSketchId}`);
+    return;
+  }
+
+  const data = await serializeCanvas();
+  if (data.nodes.length === 0) {
+    showToast('Nothing on the canvas yet — add a sound or doodle first.');
+    return;
+  }
+  if (JSON.stringify(data).length > MAX_SKETCH_BYTES) {
+    showToast('This sketch is too large to share — try shorter recordings.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/sketch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('save failed');
+    const { id } = await res.json();
+    currentSketchId = id;
+    history.pushState(null, '', `?sketch=${id}`);
+    showSharePopup(`${location.origin}${location.pathname}?sketch=${id}`);
+  } catch (err) {
+    showToast('Could not create a share link.');
+  }
+});
+
+copyLinkBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(shareLinkInput.value);
+  } catch (err) {
+    shareLinkInput.select();
+    document.execCommand('copy');
+  }
+  copyLinkBtn.textContent = 'copied!';
+  copyLinkBtn.classList.add('copied');
+  setTimeout(() => {
+    copyLinkBtn.textContent = 'copy';
+    copyLinkBtn.classList.remove('copied');
+  }, 1500);
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (sharePopup.hidden) return;
+  if (sharePopup.contains(e.target) || shareBtn.contains(e.target)) return;
+  sharePopup.hidden = true;
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveSketch();
+});
 
 // ---------- play the entire canvas, left to right ----------
 
@@ -665,3 +869,7 @@ function showToast(message) {
     toastEl.hidden = true;
   }, 3500);
 }
+
+// ---------- startup ----------
+
+loadSketchFromURL();

@@ -32,6 +32,17 @@
 
   <div id="timer" class="timer" hidden>0:00</div>
 
+  <button id="shareBtn" class="tool-btn" title="Share this sketch" aria-label="Share this sketch">
+    <span class="icon">↗</span>
+  </button>
+  <div id="sharePopup" class="add-menu share-popup" hidden>
+    <div class="share-popup-label">anyone with this link can view and edit</div>
+    <div class="share-popup-row">
+      <input type="text" id="shareLink" readonly />
+      <button type="button" id="copyLinkBtn">copy</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast" hidden></div>
 
   <script src="script.js" defer></script>

@@ -156,6 +156,61 @@ html, body {
   background: rgba(0, 0, 0, 0.06);
 }
 
+/* --- the popover that appears when you click the share button --- */
+#shareBtn {
+  right: 20px;
+}
+
+#sharePopup {
+  right: 20px;
+  left: auto;
+  width: 260px;
+  align-items: stretch;
+}
+
+.share-popup-label {
+  font-size: 11px;
+  color: var(--pencil);
+  padding: 2px 6px 4px;
+}
+
+.share-popup-row {
+  display: flex;
+  gap: 6px;
+}
+
+.share-popup-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  background: #fff;
+  color: var(--ink);
+}
+
+.share-popup-row button {
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.share-popup-row button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.share-popup-row button.copied {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 #playAllBtn {
   position: fixed;
   top: 20px;
