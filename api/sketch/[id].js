@@ -1,4 +1,4 @@
-import { readSketch, writeSketch, findSketchBlob } from '../../lib/sketch-store.js';
+import { readSketch, writeSketch, sketchExists } from '../../lib/sketch-store.js';
 
 export default async function handler(req, res) {
   const { id } = req.query;
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const existing = await findSketchBlob(id);
+    const existing = await sketchExists(id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
     const data = req.body;
