@@ -337,7 +337,7 @@ function makeDraggable(el, { onClick } = {}) {
       clearSelection();
       dragGroup.forEach((item) => scheduleObjectSave(item));
     } else if (onClick) {
-      onClick();
+      onClick(e);
     }
   });
 }
@@ -648,6 +648,28 @@ function createStrokeElement(left, top, width, height, pathD, id) {
 
 // ---------- the text tool: add a text box ----------
 
+// focuses a contenteditable AND places the cursor at the exact point clicked,
+// matching native click-to-position behavior (which a programmatic .focus() alone doesn't do)
+function focusAt(content, x, y) {
+  content.focus();
+  let range = null;
+  if (document.caretRangeFromPoint) {
+    range = document.caretRangeFromPoint(x, y);
+  } else if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y);
+    if (pos) {
+      range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+    }
+  }
+  if (range) {
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+}
+
 textBtn.addEventListener('click', () => {
   if (mode === 'pen') setMode('pen');
   const { x, y } = nextSpawnPosition();
@@ -689,7 +711,7 @@ function createTextElement(x, y, text, id) {
   // a plain click (no movement) focuses the text for editing, same single-click
   // feel as the note under a sound; a click-and-drag moves it instead, same
   // disambiguation makeDraggable already uses for playing a sound on click
-  makeDraggable(el, { onClick: () => content.focus() });
+  makeDraggable(el, { onClick: (e) => focusAt(content, e.clientX, e.clientY) });
 
   // once actually focused, clicks inside should behave like normal text editing
   // (place the cursor, select text) instead of being treated as a drag
