@@ -20,7 +20,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const CANVAS_PIXELS_PER_SECOND = 140;
 const DRAG_THRESHOLD = 4;
 const AUTOSAVE_DEBOUNCE_MS = 1500;
-const MAX_SKETCH_BYTES = 4 * 1024 * 1024; // stay under Vercel's 4.5MB function body limit
+const MAX_OBJECT_BYTES = 4 * 1024 * 1024; // stay under Vercel's 4.5MB function body limit, per object
 
 let mode = 'pointer'; // 'pointer' | 'pen'
 
@@ -36,7 +36,6 @@ let clipboard = null;
 let pasteGeneration = 0;
 let currentSketchId = null;
 let isLoadingSketch = false;
-let autosaveTimer = null;
 
 // ---------- feature check ----------
 
@@ -327,7 +326,7 @@ function makeDraggable(el, { onClick } = {}) {
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (moved) {
       clearSelection();
-      scheduleAutosave();
+      dragGroup.forEach((item) => scheduleObjectSave(item));
     } else if (onClick) {
       onClick();
     }
@@ -336,12 +335,13 @@ function makeDraggable(el, { onClick } = {}) {
 
 // ---------- sound nodes: draggable, playable, annotatable ----------
 
-function createSoundNode(x, y, url) {
+function createSoundNode(x, y, url, id) {
   const node = document.createElement('div');
   node.className = 'sound-node';
   node.style.left = `${x}px`;
   node.style.top = `${y}px`;
   node.dataset.url = url;
+  node.dataset.objectId = id || crypto.randomUUID();
 
   const wobble = (Math.random() * 8 - 4).toFixed(1);
   node.style.transform = `rotate(${wobble}deg)`;
@@ -372,7 +372,7 @@ function createSoundNode(x, y, url) {
   board.appendChild(node);
 
   wireUpNode(node, del, dup, note, bars);
-  scheduleAutosave();
+  scheduleObjectSave(node);
   return node;
 }
 
@@ -423,8 +423,8 @@ function wireUpNode(node, del, dup, note, bars) {
   node.deleteSound = () => {
     activeAudios.forEach((audio) => audio.pause());
     URL.revokeObjectURL(node.dataset.url);
+    deleteObjectRemote(node.dataset.objectId);
     node.remove();
-    scheduleAutosave();
   };
 
   makeDraggable(node, { onClick: trigger });
@@ -444,7 +444,7 @@ function wireUpNode(node, del, dup, note, bars) {
 
   note.addEventListener('pointerdown', (e) => e.stopPropagation());
   note.addEventListener('click', (e) => e.stopPropagation());
-  note.addEventListener('input', scheduleAutosave);
+  note.addEventListener('input', () => scheduleObjectSave(node));
   note.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -574,13 +574,14 @@ function finalizeStroke(points) {
   createStrokeElement(minX, minY, width, height, pathD);
 }
 
-function createStrokeElement(left, top, width, height, pathD) {
+function createStrokeElement(left, top, width, height, pathD, id) {
   const strokeEl = document.createElement('div');
   strokeEl.className = 'stroke';
   strokeEl.style.left = `${left}px`;
   strokeEl.style.top = `${top}px`;
   strokeEl.style.width = `${width}px`;
   strokeEl.style.height = `${height}px`;
+  strokeEl.dataset.objectId = id || crypto.randomUUID();
 
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('width', width);
@@ -608,8 +609,8 @@ function createStrokeElement(left, top, width, height, pathD) {
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
     e.stopPropagation();
+    deleteObjectRemote(strokeEl.dataset.objectId);
     strokeEl.remove();
-    scheduleAutosave();
   });
 
   dup.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -620,7 +621,7 @@ function createStrokeElement(left, top, width, height, pathD) {
     createStrokeElement(currentLeft, currentTop, width, height, pathD);
   });
 
-  scheduleAutosave();
+  scheduleObjectSave(strokeEl);
   return strokeEl;
 }
 
@@ -642,41 +643,42 @@ function base64ToBlob(base64, mimeType) {
   return new Blob([bytes], { type: mimeType });
 }
 
+async function serializeOne(el) {
+  const x = parseFloat(el.style.left);
+  const y = parseFloat(el.style.top);
+  const id = el.dataset.objectId;
+
+  if (el.classList.contains('sound-node')) {
+    const blob = await (await fetch(el.dataset.url)).blob();
+    const base64 = await blobToBase64(blob);
+    const rotationMatch = el.style.transform.match(/rotate\(([-\d.]+)deg\)/);
+    const note = el.querySelector('.note');
+    return {
+      id,
+      type: 'sound',
+      x,
+      y,
+      rotation: rotationMatch ? parseFloat(rotationMatch[1]) : 0,
+      note: note ? note.textContent : '',
+      audio: { mimeType: blob.type || 'audio/webm', base64 },
+    };
+  }
+
+  const path = el.querySelector('path');
+  return {
+    id,
+    type: 'stroke',
+    x,
+    y,
+    width: parseFloat(el.style.width),
+    height: parseFloat(el.style.height),
+    pathD: path.getAttribute('d'),
+  };
+}
+
 async function serializeCanvas() {
   const elements = Array.from(document.querySelectorAll('.sound-node, .stroke'));
-
-  const nodes = await Promise.all(
-    elements.map(async (el) => {
-      const x = parseFloat(el.style.left);
-      const y = parseFloat(el.style.top);
-
-      if (el.classList.contains('sound-node')) {
-        const blob = await (await fetch(el.dataset.url)).blob();
-        const base64 = await blobToBase64(blob);
-        const rotationMatch = el.style.transform.match(/rotate\(([-\d.]+)deg\)/);
-        const note = el.querySelector('.note');
-        return {
-          type: 'sound',
-          x,
-          y,
-          rotation: rotationMatch ? parseFloat(rotationMatch[1]) : 0,
-          note: note ? note.textContent : '',
-          audio: { mimeType: blob.type || 'audio/webm', base64 },
-        };
-      }
-
-      const path = el.querySelector('path');
-      return {
-        type: 'stroke',
-        x,
-        y,
-        width: parseFloat(el.style.width),
-        height: parseFloat(el.style.height),
-        pathD: path.getAttribute('d'),
-      };
-    })
-  );
-
+  const nodes = await Promise.all(elements.map((el) => serializeOne(el)));
   return { version: 1, nodes };
 }
 
@@ -688,12 +690,12 @@ function deserializeCanvas(data) {
     if (n.type === 'sound') {
       const blob = base64ToBlob(n.audio.base64, n.audio.mimeType);
       const url = URL.createObjectURL(blob);
-      const node = createSoundNode(n.x, n.y, url);
+      const node = createSoundNode(n.x, n.y, url, n.id);
       node.style.transform = `rotate(${n.rotation || 0}deg)`;
       const note = node.querySelector('.note');
       if (note) note.textContent = n.note || '';
     } else if (n.type === 'stroke') {
-      createStrokeElement(n.x, n.y, n.width, n.height, n.pathD);
+      createStrokeElement(n.x, n.y, n.width, n.height, n.pathD, n.id);
     }
   });
 
@@ -701,7 +703,7 @@ function deserializeCanvas(data) {
   spawnIndex = nodes.filter((n) => n.type === 'sound').length;
 }
 
-// ---------- sharing: save to a link, load from a link, autosave ----------
+// ---------- sharing: save to a link, load from a link, per-object autosave ----------
 
 async function loadSketchFromURL() {
   const id = new URLSearchParams(location.search).get('sketch');
@@ -724,28 +726,53 @@ async function loadSketchFromURL() {
   }
 }
 
-function scheduleAutosave() {
+const pendingObjectSaves = new Map(); // objectId -> timeout handle
+
+function scheduleObjectSave(el) {
   if (isLoadingSketch || !currentSketchId) return;
-  clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(saveSketch, AUTOSAVE_DEBOUNCE_MS);
+  const objectId = el.dataset.objectId;
+  clearTimeout(pendingObjectSaves.get(objectId));
+  pendingObjectSaves.set(objectId, setTimeout(() => saveObject(el), AUTOSAVE_DEBOUNCE_MS));
 }
 
-async function saveSketch() {
+async function saveObject(el) {
+  const objectId = el.dataset.objectId;
+  pendingObjectSaves.delete(objectId);
   if (!currentSketchId) return;
-  const data = await serializeCanvas();
-  if (JSON.stringify(data).length > MAX_SKETCH_BYTES) {
-    showToast('This sketch got too large to save — try shorter recordings.');
+
+  const node = await serializeOne(el);
+  if (JSON.stringify(node).length > MAX_OBJECT_BYTES) {
+    showToast('That recording is too large to save — try a shorter clip.');
     return;
   }
   try {
-    await fetch(`/api/sketch/${currentSketchId}`, {
+    await fetch(`/api/sketch/${currentSketchId}?objectId=${objectId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(node),
     });
   } catch (err) {
     showToast('Could not save changes.');
   }
+}
+
+async function deleteObjectRemote(objectId) {
+  if (!currentSketchId) return;
+  clearTimeout(pendingObjectSaves.get(objectId));
+  pendingObjectSaves.delete(objectId);
+  try {
+    await fetch(`/api/sketch/${currentSketchId}?objectId=${objectId}`, { method: 'DELETE' });
+  } catch (err) {
+    // best-effort — nothing more to do locally if this fails
+  }
+}
+
+function flushPendingSaves() {
+  const pending = Array.from(document.querySelectorAll('.sound-node, .stroke')).filter((el) =>
+    pendingObjectSaves.has(el.dataset.objectId)
+  );
+  pending.forEach((el) => clearTimeout(pendingObjectSaves.get(el.dataset.objectId)));
+  return Promise.all(pending.map((el) => saveObject(el)));
 }
 
 function showSharePopup(url) {
@@ -757,7 +784,7 @@ function showSharePopup(url) {
 
 shareBtn.addEventListener('click', async () => {
   if (currentSketchId) {
-    await saveSketch();
+    await flushPendingSaves();
     showSharePopup(`${location.origin}${location.pathname}?sketch=${currentSketchId}`);
     return;
   }
@@ -767,8 +794,9 @@ shareBtn.addEventListener('click', async () => {
     showToast('Nothing on the canvas yet — add a sound or doodle first.');
     return;
   }
-  if (JSON.stringify(data).length > MAX_SKETCH_BYTES) {
-    showToast('This sketch is too large to share — try shorter recordings.');
+  const tooLarge = data.nodes.some((node) => JSON.stringify(node).length > MAX_OBJECT_BYTES);
+  if (tooLarge) {
+    showToast('One of these recordings is too large to share — try a shorter clip.');
     return;
   }
 
@@ -810,7 +838,7 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') saveSketch();
+  if (document.visibilityState === 'hidden') flushPendingSaves();
 });
 
 // ---------- play the entire canvas, left to right ----------

@@ -1,4 +1,4 @@
-import { generateId, writeSketch } from '../lib/sketch-store.js';
+import { createSketch } from '../lib/sketch-store.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -11,12 +11,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Expected a { nodes: [...] } sketch document' });
   }
 
-  const id = generateId();
   try {
-    await writeSketch(id, data);
+    const id = await createSketch(data.nodes);
     return res.status(201).json({ id });
   } catch (err) {
-    console.error('Failed to save sketch', err);
-    return res.status(500).json({ error: 'Could not save sketch' });
+    console.error('Failed to create sketch', err);
+    return res.status(500).json({ error: 'Could not create sketch' });
   }
 }
