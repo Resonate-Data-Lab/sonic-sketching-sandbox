@@ -214,7 +214,7 @@ html, body {
 #playAllBtn {
   position: fixed;
   top: 20px;
-  left: 148px;
+  left: 212px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -285,10 +285,14 @@ html, body {
   left: 84px;
 }
 
+#textBtn {
+  left: 148px;
+}
+
 #timer {
   position: fixed;
   top: 28px;
-  left: 212px;
+  left: 276px;
   font-size: 13px;
   color: var(--accent);
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -356,7 +360,8 @@ html, body {
 }
 
 .sound-node .delete,
-.stroke .delete {
+.stroke .delete,
+.text-box .delete {
   position: absolute;
   top: -8px;
   right: -8px;
@@ -376,7 +381,8 @@ html, body {
 }
 
 .sound-node .duplicate,
-.stroke .duplicate {
+.stroke .duplicate,
+.text-box .duplicate {
   position: absolute;
   bottom: -8px;
   right: -8px;
@@ -393,7 +399,9 @@ html, body {
 .sound-node .duplicate::before,
 .sound-node .duplicate::after,
 .stroke .duplicate::before,
-.stroke .duplicate::after {
+.stroke .duplicate::after,
+.text-box .duplicate::before,
+.text-box .duplicate::after {
   content: '';
   position: absolute;
   width: 8px;
@@ -404,14 +412,16 @@ html, body {
 }
 
 .sound-node .duplicate::before,
-.stroke .duplicate::before {
+.stroke .duplicate::before,
+.text-box .duplicate::before {
   top: 3.5px;
   left: 3.5px;
   z-index: 1;
 }
 
 .sound-node .duplicate::after,
-.stroke .duplicate::after {
+.stroke .duplicate::after,
+.text-box .duplicate::after {
   top: 7px;
   left: 7px;
   z-index: 2;
@@ -420,7 +430,9 @@ html, body {
 .sound-node:hover .delete,
 .sound-node:hover .duplicate,
 .stroke:hover .delete,
-.stroke:hover .duplicate {
+.stroke:hover .duplicate,
+.text-box:hover .delete,
+.text-box:hover .duplicate {
   display: flex;
 }
 
@@ -510,6 +522,47 @@ html, body {
   border-color: var(--accent);
 }
 
+/* --- a standalone text box --- */
+.text-box {
+  position: absolute;
+  min-width: 100px;
+  max-width: 260px;
+  padding: 10px 14px;
+  border: 2px dashed var(--ink);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.1);
+  cursor: grab;
+  touch-action: none;
+  z-index: 11;
+}
+
+.text-box:active {
+  cursor: grabbing;
+}
+
+.text-box.selected {
+  border-color: var(--accent);
+}
+
+.text-box .text-content {
+  min-width: 70px;
+  min-height: 1.4em;
+  font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive;
+  font-size: 16px;
+  color: var(--ink);
+  outline: none;
+  cursor: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: auto;
+}
+
+.text-box .text-content:empty::before {
+  content: attr(data-placeholder);
+  color: #b9b2a0;
+}
+
 /* --- the rubber-band selection box --- */
 .marquee {
   position: absolute;
@@ -522,7 +575,8 @@ html, body {
 /* --- while the pen is active, nothing else on the canvas is interactive,
    so a stroke can always be drawn even on top of another object --- */
 body.pen-active .sound-node,
-body.pen-active .stroke {
+body.pen-active .stroke,
+body.pen-active .text-box {
   pointer-events: none;
 }
 
@@ -530,6 +584,9 @@ body.pen-active .sound-node .delete,
 body.pen-active .sound-node .duplicate,
 body.pen-active .sound-node .note,
 body.pen-active .stroke .delete,
-body.pen-active .stroke .duplicate {
+body.pen-active .stroke .duplicate,
+body.pen-active .text-box .delete,
+body.pen-active .text-box .duplicate,
+body.pen-active .text-box .text-content {
   pointer-events: none;
 }

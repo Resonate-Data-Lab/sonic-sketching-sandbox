@@ -10,6 +10,7 @@ const toastEl = document.getElementById('toast');
 const addMenu = document.getElementById('addMenu');
 const fileInput = document.getElementById('fileInput');
 const penBtn = document.getElementById('penBtn');
+const textBtn = document.getElementById('textBtn');
 const drawPreview = document.getElementById('drawPreview');
 const shareBtn = document.getElementById('shareBtn');
 const sharePopup = document.getElementById('sharePopup');
@@ -77,7 +78,7 @@ document.addEventListener('keydown', (e) => {
     const selected = Array.from(document.querySelectorAll('.selected'));
     if (selected.length === 0) return;
     e.preventDefault();
-    selected.forEach((el) => (el.deleteSound ? el.deleteSound() : el.remove()));
+    selected.forEach((el) => el.deleteObject());
     return;
   }
 
@@ -237,6 +238,10 @@ async function copySelection() {
             pathD: path.getAttribute('d'),
           };
         }
+        if (el.classList.contains('text-box')) {
+          const content = el.querySelector('.text-content');
+          return { type: 'text', relX, relY, text: content ? content.textContent : '' };
+        }
         return null;
       })
     );
@@ -268,6 +273,9 @@ function pasteClipboard() {
       }
       if (item.type === 'stroke') {
         return createStrokeElement(x, y, item.width, item.height, item.pathD);
+      }
+      if (item.type === 'text') {
+        return createTextElement(x, y, item.text);
       }
       return null;
     })
@@ -420,7 +428,7 @@ function wireUpNode(node, del, dup, note, bars) {
   node.triggerSound = trigger;
 
   // shared by the "x" button and the Delete/Backspace key on a selection
-  node.deleteSound = () => {
+  node.deleteObject = () => {
     activeAudios.forEach((audio) => audio.pause());
     URL.revokeObjectURL(node.dataset.url);
     deleteObjectRemote(node.dataset.objectId);
@@ -433,7 +441,7 @@ function wireUpNode(node, del, dup, note, bars) {
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
     e.stopPropagation();
-    node.deleteSound();
+    node.deleteObject();
   });
 
   dup.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -513,7 +521,7 @@ function startMarquee(e) {
   }
 
   function applySelection(rect) {
-    document.querySelectorAll('.sound-node, .stroke').forEach((item) => {
+    document.querySelectorAll('.sound-node, .stroke, .text-box').forEach((item) => {
       const r = item.getBoundingClientRect();
       const intersects = !(r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom);
       item.classList.toggle('selected', intersects || keepSelected.has(item));
@@ -604,13 +612,17 @@ function createStrokeElement(left, top, width, height, pathD, id) {
   strokeEl.append(svg, del, dup);
   board.appendChild(strokeEl);
 
+  strokeEl.deleteObject = () => {
+    deleteObjectRemote(strokeEl.dataset.objectId);
+    strokeEl.remove();
+  };
+
   makeDraggable(strokeEl);
 
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
     e.stopPropagation();
-    deleteObjectRemote(strokeEl.dataset.objectId);
-    strokeEl.remove();
+    strokeEl.deleteObject();
   });
 
   dup.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -623,6 +635,70 @@ function createStrokeElement(left, top, width, height, pathD, id) {
 
   scheduleObjectSave(strokeEl);
   return strokeEl;
+}
+
+// ---------- the text tool: add a text box ----------
+
+textBtn.addEventListener('click', () => {
+  if (mode === 'pen') setMode('pen');
+  const { x, y } = nextSpawnPosition();
+  const el = createTextElement(x, y, '');
+  el.querySelector('.text-content').focus();
+});
+
+function createTextElement(x, y, text, id) {
+  const el = document.createElement('div');
+  el.className = 'text-box';
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.dataset.objectId = id || crypto.randomUUID();
+
+  const content = document.createElement('div');
+  content.className = 'text-content';
+  content.contentEditable = 'true';
+  content.setAttribute('data-placeholder', 'type something…');
+  content.spellcheck = false;
+  content.textContent = text || '';
+
+  const del = document.createElement('div');
+  del.className = 'delete';
+  del.textContent = '×';
+  del.title = 'Delete this text';
+
+  const dup = document.createElement('div');
+  dup.className = 'duplicate';
+  dup.title = 'Duplicate this text';
+
+  el.append(content, del, dup);
+  board.appendChild(el);
+
+  el.deleteObject = () => {
+    deleteObjectRemote(el.dataset.objectId);
+    el.remove();
+  };
+
+  makeDraggable(el);
+
+  content.addEventListener('pointerdown', (e) => e.stopPropagation());
+  content.addEventListener('click', (e) => e.stopPropagation());
+  content.addEventListener('input', () => scheduleObjectSave(el));
+
+  del.addEventListener('pointerdown', (e) => e.stopPropagation());
+  del.addEventListener('click', (e) => {
+    e.stopPropagation();
+    el.deleteObject();
+  });
+
+  dup.addEventListener('pointerdown', (e) => e.stopPropagation());
+  dup.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const currentLeft = parseFloat(el.style.left) + 30;
+    const currentTop = parseFloat(el.style.top) + 30;
+    createTextElement(currentLeft, currentTop, content.textContent);
+  });
+
+  scheduleObjectSave(el);
+  return el;
 }
 
 // ---------- sharing: serialize the canvas to JSON and back ----------
@@ -664,6 +740,11 @@ async function serializeOne(el) {
     };
   }
 
+  if (el.classList.contains('text-box')) {
+    const content = el.querySelector('.text-content');
+    return { id, type: 'text', x, y, text: content ? content.textContent : '' };
+  }
+
   const path = el.querySelector('path');
   return {
     id,
@@ -677,13 +758,13 @@ async function serializeOne(el) {
 }
 
 async function serializeCanvas() {
-  const elements = Array.from(document.querySelectorAll('.sound-node, .stroke'));
+  const elements = Array.from(document.querySelectorAll('.sound-node, .stroke, .text-box'));
   const nodes = await Promise.all(elements.map((el) => serializeOne(el)));
   return { version: 1, nodes };
 }
 
 function deserializeCanvas(data) {
-  document.querySelectorAll('.sound-node, .stroke').forEach((el) => el.remove());
+  document.querySelectorAll('.sound-node, .stroke, .text-box').forEach((el) => el.remove());
 
   const nodes = (data && data.nodes) || [];
   nodes.forEach((n) => {
@@ -696,11 +777,13 @@ function deserializeCanvas(data) {
       if (note) note.textContent = n.note || '';
     } else if (n.type === 'stroke') {
       createStrokeElement(n.x, n.y, n.width, n.height, n.pathD, n.id);
+    } else if (n.type === 'text') {
+      createTextElement(n.x, n.y, n.text, n.id);
     }
   });
 
-  // reduce (not fully eliminate) new recordings landing on top of restored ones
-  spawnIndex = nodes.filter((n) => n.type === 'sound').length;
+  // reduce (not fully eliminate) new objects landing on top of restored ones
+  spawnIndex = nodes.length;
 }
 
 // ---------- sharing: save to a link, load from a link, per-object autosave ----------
@@ -768,7 +851,7 @@ async function deleteObjectRemote(objectId) {
 }
 
 function flushPendingSaves() {
-  const pending = Array.from(document.querySelectorAll('.sound-node, .stroke')).filter((el) =>
+  const pending = Array.from(document.querySelectorAll('.sound-node, .stroke, .text-box')).filter((el) =>
     pendingObjectSaves.has(el.dataset.objectId)
   );
   pending.forEach((el) => clearTimeout(pendingObjectSaves.get(el.dataset.objectId)));
