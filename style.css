@@ -616,8 +616,8 @@ html, body {
 /* --- an uploaded image: just the image itself, no extra chrome --- */
 .image-box {
   position: absolute;
-  max-width: 220px;
-  max-height: 220px;
+  max-width: 360px;
+  max-height: 360px;
   cursor: grab;
   touch-action: none;
   z-index: 4;
@@ -630,8 +630,8 @@ html, body {
 
 .image-box img {
   display: block;
-  max-width: 220px;
-  max-height: 220px;
+  max-width: 360px;
+  max-height: 360px;
   pointer-events: none;
 }
 
