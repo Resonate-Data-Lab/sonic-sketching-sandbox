@@ -522,16 +522,10 @@ html, body {
   border-color: var(--accent);
 }
 
-/* --- a standalone text box --- */
+/* --- a standalone text box: just floating text, like the note under a sound --- */
 .text-box {
   position: absolute;
-  min-width: 100px;
   max-width: 260px;
-  padding: 10px 14px;
-  border: 2px dashed var(--ink);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.1);
   cursor: grab;
   touch-action: none;
   z-index: 11;
@@ -541,26 +535,30 @@ html, body {
   cursor: grabbing;
 }
 
-.text-box.selected {
-  border-color: var(--accent);
-}
-
 .text-box .text-content {
-  min-width: 70px;
-  min-height: 1.4em;
+  min-width: 40px;
+  min-height: 1.3em;
   font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive;
   font-size: 16px;
   color: var(--ink);
   outline: none;
-  cursor: text;
   white-space: pre-wrap;
   word-break: break-word;
+  border-bottom: 1px dashed var(--line);
   pointer-events: auto;
+}
+
+.text-box .text-content:focus {
+  cursor: text;
 }
 
 .text-box .text-content:empty::before {
   content: attr(data-placeholder);
   color: #b9b2a0;
+}
+
+.text-box.selected .text-content {
+  border-bottom-color: var(--accent);
 }
 
 /* --- the rubber-band selection box --- */

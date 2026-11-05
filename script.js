@@ -59,12 +59,13 @@ document.addEventListener('pointerdown', (e) => {
   addMenu.hidden = true;
 });
 
-// a focused note (contenteditable) otherwise never loses focus when you click
+// a focused note/text box (contenteditable) otherwise never loses focus when you click
 // away from it, since sound nodes/strokes/the board aren't themselves focusable —
 // that stale focus would otherwise silently swallow Delete/Cmd+C/Cmd+V as "typing"
 document.addEventListener('pointerdown', (e) => {
   const active = document.activeElement;
-  if (active && active.classList && active.classList.contains('note') && !active.contains(e.target)) {
+  const isEditableField = active && active.classList && (active.classList.contains('note') || active.classList.contains('text-content'));
+  if (isEditableField && !active.contains(e.target)) {
     active.blur();
   }
 });
@@ -498,15 +499,18 @@ board.addEventListener('pointerdown', (e) => {
 });
 
 function startMarquee(e) {
+  // nothing on the canvas to select yet — skip the whole marquee interaction so
+  // casual clicking around an empty canvas never flashes a confusing selection box
+  if (document.querySelectorAll('.sound-node, .stroke, .text-box').length === 0) return;
+
   e.preventDefault();
   const keepSelected = e.shiftKey ? new Set(document.querySelectorAll('.selected')) : new Set();
   if (!e.shiftKey) clearSelection();
 
   const startX = e.clientX;
   const startY = e.clientY;
-  const box = document.createElement('div');
-  box.className = 'marquee';
-  board.appendChild(box);
+  let box = null;
+  let moved = false;
 
   function updateBox(cx, cy) {
     const x = Math.min(startX, cx);
@@ -528,15 +532,20 @@ function startMarquee(e) {
     });
   }
 
-  applySelection(updateBox(startX, startY));
-
   function onMove(ev) {
+    if (!moved) {
+      if (Math.abs(ev.clientX - startX) <= DRAG_THRESHOLD && Math.abs(ev.clientY - startY) <= DRAG_THRESHOLD) return;
+      moved = true;
+      box = document.createElement('div');
+      box.className = 'marquee';
+      board.appendChild(box);
+    }
     applySelection(updateBox(ev.clientX, ev.clientY));
   }
   function onUp() {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
-    box.remove();
+    if (box) box.remove();
   }
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
@@ -679,9 +688,17 @@ function createTextElement(x, y, text, id) {
 
   makeDraggable(el);
 
-  content.addEventListener('pointerdown', (e) => e.stopPropagation());
-  content.addEventListener('click', (e) => e.stopPropagation());
+  // resting (unfocused) text is just a draggable object, like a sound or stroke;
+  // only once it's actually focused (via the dblclick below) does a click inside it
+  // behave like normal text editing instead of starting a drag
+  content.addEventListener('pointerdown', (e) => {
+    if (document.activeElement === content) e.stopPropagation();
+  });
+  content.addEventListener('click', (e) => {
+    if (document.activeElement === content) e.stopPropagation();
+  });
   content.addEventListener('input', () => scheduleObjectSave(el));
+  el.addEventListener('dblclick', () => content.focus());
 
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
