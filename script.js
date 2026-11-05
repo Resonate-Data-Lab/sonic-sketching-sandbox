@@ -686,11 +686,13 @@ function createTextElement(x, y, text, id) {
     el.remove();
   };
 
-  makeDraggable(el);
+  // a plain click (no movement) focuses the text for editing, same single-click
+  // feel as the note under a sound; a click-and-drag moves it instead, same
+  // disambiguation makeDraggable already uses for playing a sound on click
+  makeDraggable(el, { onClick: () => content.focus() });
 
-  // resting (unfocused) text is just a draggable object, like a sound or stroke;
-  // only once it's actually focused (via the dblclick below) does a click inside it
-  // behave like normal text editing instead of starting a drag
+  // once actually focused, clicks inside should behave like normal text editing
+  // (place the cursor, select text) instead of being treated as a drag
   content.addEventListener('pointerdown', (e) => {
     if (document.activeElement === content) e.stopPropagation();
   });
@@ -698,7 +700,6 @@ function createTextElement(x, y, text, id) {
     if (document.activeElement === content) e.stopPropagation();
   });
   content.addEventListener('input', () => scheduleObjectSave(el));
-  el.addEventListener('dblclick', () => content.focus());
 
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
