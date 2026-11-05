@@ -18,8 +18,8 @@ export default async function handler(req, res) {
     if (!exists) return res.status(404).json({ error: 'Not found' });
 
     const data = req.body;
-    if (!data || !['sound', 'stroke', 'text'].includes(data.type)) {
-      return res.status(400).json({ error: 'Expected a sound, stroke, or text object' });
+    if (!data || !['sound', 'stroke', 'text', 'image'].includes(data.type)) {
+      return res.status(400).json({ error: 'Expected a sound, stroke, text, or image object' });
     }
 
     try {

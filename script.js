@@ -3,6 +3,7 @@
 const board = document.getElementById('board');
 const recordBtn = document.getElementById('recordBtn');
 const recordIcon = recordBtn.querySelector('.icon');
+const waveformIconHTML = recordIcon.innerHTML;
 const playAllBtn = document.getElementById('playAllBtn');
 const playheadEl = document.getElementById('playhead');
 const timerEl = document.getElementById('timer');
@@ -11,6 +12,8 @@ const addMenu = document.getElementById('addMenu');
 const fileInput = document.getElementById('fileInput');
 const penBtn = document.getElementById('penBtn');
 const textBtn = document.getElementById('textBtn');
+const imageBtn = document.getElementById('imageBtn');
+const imageFileInput = document.getElementById('imageFileInput');
 const drawPreview = document.getElementById('drawPreview');
 const shareBtn = document.getElementById('shareBtn');
 const sharePopup = document.getElementById('sharePopup');
@@ -142,7 +145,7 @@ async function startRecording() {
 
   isRecording = true;
   recordBtn.classList.add('recording');
-  recordIcon.textContent = '■';
+  recordIcon.textContent = '■'; // overwrites the waveform bars while recording
   recordBtn.title = 'Stop recording';
   startTimer();
 }
@@ -157,7 +160,7 @@ function stopRecording() {
   }
   isRecording = false;
   recordBtn.classList.remove('recording');
-  recordIcon.textContent = '+';
+  recordIcon.innerHTML = waveformIconHTML;
   recordBtn.title = 'Record a sound';
   stopTimer();
 }
@@ -243,6 +246,10 @@ async function copySelection() {
           const content = el.querySelector('.text-content');
           return { type: 'text', relX, relY, text: content ? content.textContent : '' };
         }
+        if (el.classList.contains('image-box')) {
+          const blob = await (await fetch(el.dataset.url)).blob();
+          return { type: 'image', relX, relY, blob };
+        }
         return null;
       })
     );
@@ -277,6 +284,9 @@ function pasteClipboard() {
       }
       if (item.type === 'text') {
         return createTextElement(x, y, item.text);
+      }
+      if (item.type === 'image') {
+        return createImageElement(x, y, URL.createObjectURL(item.blob));
       }
       return null;
     })
@@ -501,7 +511,7 @@ board.addEventListener('pointerdown', (e) => {
 function startMarquee(e) {
   // nothing on the canvas to select yet — skip the whole marquee interaction so
   // casual clicking around an empty canvas never flashes a confusing selection box
-  if (document.querySelectorAll('.sound-node, .stroke, .text-box').length === 0) return;
+  if (document.querySelectorAll('.sound-node, .stroke, .text-box, .image-box').length === 0) return;
 
   e.preventDefault();
   const keepSelected = e.shiftKey ? new Set(document.querySelectorAll('.selected')) : new Set();
@@ -525,7 +535,7 @@ function startMarquee(e) {
   }
 
   function applySelection(rect) {
-    document.querySelectorAll('.sound-node, .stroke, .text-box').forEach((item) => {
+    document.querySelectorAll('.sound-node, .stroke, .text-box, .image-box').forEach((item) => {
       const r = item.getBoundingClientRect();
       const intersects = !(r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom);
       item.classList.toggle('selected', intersects || keepSelected.has(item));
@@ -741,6 +751,85 @@ function createTextElement(x, y, text, id) {
   return el;
 }
 
+// ---------- uploading an image ----------
+
+imageBtn.addEventListener('click', () => {
+  if (mode === 'pen') setMode('pen');
+  imageFileInput.click();
+});
+
+imageFileInput.addEventListener('change', () => {
+  const file = imageFileInput.files && imageFileInput.files[0];
+  imageFileInput.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    showToast('Please choose an image file (jpg, png, etc).');
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const { x, y } = nextSpawnPosition();
+  createImageElement(x, y, url);
+});
+
+function createImageElement(x, y, url, id) {
+  const el = document.createElement('div');
+  el.className = 'image-box';
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.dataset.url = url;
+  el.dataset.objectId = id || crypto.randomUUID();
+
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = '';
+  img.draggable = false;
+
+  const del = document.createElement('div');
+  del.className = 'delete';
+  del.textContent = '×';
+  del.title = 'Delete this image';
+
+  const dup = document.createElement('div');
+  dup.className = 'duplicate';
+  dup.title = 'Duplicate this image';
+
+  el.append(img, del, dup);
+  board.appendChild(el);
+
+  el.deleteObject = () => {
+    deleteObjectRemote(el.dataset.objectId);
+    URL.revokeObjectURL(el.dataset.url);
+    el.remove();
+  };
+
+  makeDraggable(el);
+
+  del.addEventListener('pointerdown', (e) => e.stopPropagation());
+  del.addEventListener('click', (e) => {
+    e.stopPropagation();
+    el.deleteObject();
+  });
+
+  dup.addEventListener('pointerdown', (e) => e.stopPropagation());
+  dup.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      // an independent copy of the blob, same reason sound duplication does this —
+      // deleting the original must not break a duplicate sharing the same URL
+      const blob = await (await fetch(el.dataset.url)).blob();
+      const newUrl = URL.createObjectURL(blob);
+      const currentLeft = parseFloat(el.style.left) + 30;
+      const currentTop = parseFloat(el.style.top) + 30;
+      createImageElement(currentLeft, currentTop, newUrl);
+    } catch (err) {
+      showToast('Could not duplicate that image.');
+    }
+  });
+
+  scheduleObjectSave(el);
+  return el;
+}
+
 // ---------- sharing: serialize the canvas to JSON and back ----------
 
 function blobToBase64(blob) {
@@ -785,6 +874,12 @@ async function serializeOne(el) {
     return { id, type: 'text', x, y, text: content ? content.textContent : '' };
   }
 
+  if (el.classList.contains('image-box')) {
+    const blob = await (await fetch(el.dataset.url)).blob();
+    const base64 = await blobToBase64(blob);
+    return { id, type: 'image', x, y, image: { mimeType: blob.type || 'image/png', base64 } };
+  }
+
   const path = el.querySelector('path');
   return {
     id,
@@ -798,13 +893,13 @@ async function serializeOne(el) {
 }
 
 async function serializeCanvas() {
-  const elements = Array.from(document.querySelectorAll('.sound-node, .stroke, .text-box'));
+  const elements = Array.from(document.querySelectorAll('.sound-node, .stroke, .text-box, .image-box'));
   const nodes = await Promise.all(elements.map((el) => serializeOne(el)));
   return { version: 1, nodes };
 }
 
 function deserializeCanvas(data) {
-  document.querySelectorAll('.sound-node, .stroke, .text-box').forEach((el) => el.remove());
+  document.querySelectorAll('.sound-node, .stroke, .text-box, .image-box').forEach((el) => el.remove());
 
   const nodes = (data && data.nodes) || [];
   nodes.forEach((n) => {
@@ -819,6 +914,10 @@ function deserializeCanvas(data) {
       createStrokeElement(n.x, n.y, n.width, n.height, n.pathD, n.id);
     } else if (n.type === 'text') {
       createTextElement(n.x, n.y, n.text, n.id);
+    } else if (n.type === 'image') {
+      const blob = base64ToBlob(n.image.base64, n.image.mimeType);
+      const url = URL.createObjectURL(blob);
+      createImageElement(n.x, n.y, url, n.id);
     }
   });
 
@@ -865,7 +964,7 @@ async function saveObject(el) {
 
   const node = await serializeOne(el);
   if (JSON.stringify(node).length > MAX_OBJECT_BYTES) {
-    showToast('That recording is too large to save — try a shorter clip.');
+    showToast('That is too large to save — try a shorter clip or a smaller file.');
     return;
   }
   try {
@@ -891,7 +990,7 @@ async function deleteObjectRemote(objectId) {
 }
 
 function flushPendingSaves() {
-  const pending = Array.from(document.querySelectorAll('.sound-node, .stroke, .text-box')).filter((el) =>
+  const pending = Array.from(document.querySelectorAll('.sound-node, .stroke, .text-box, .image-box')).filter((el) =>
     pendingObjectSaves.has(el.dataset.objectId)
   );
   pending.forEach((el) => clearTimeout(pendingObjectSaves.get(el.dataset.objectId)));
@@ -919,7 +1018,7 @@ shareBtn.addEventListener('click', async () => {
   }
   const tooLarge = data.nodes.some((node) => JSON.stringify(node).length > MAX_OBJECT_BYTES);
   if (tooLarge) {
-    showToast('One of these recordings is too large to share — try a shorter clip.');
+    showToast('One of these items is too large to share — try a shorter clip or a smaller file.');
     return;
   }
 

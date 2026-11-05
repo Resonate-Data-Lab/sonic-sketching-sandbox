@@ -14,7 +14,13 @@
   </div>
 
   <button id="recordBtn" title="Add a sound" aria-label="Add a sound">
-    <span class="icon">+</span>
+    <span class="icon">
+      <span class="wave-bar" style="height: 7px"></span>
+      <span class="wave-bar" style="height: 13px"></span>
+      <span class="wave-bar" style="height: 17px"></span>
+      <span class="wave-bar" style="height: 11px"></span>
+      <span class="wave-bar" style="height: 6px"></span>
+    </span>
   </button>
   <div id="addMenu" class="add-menu" hidden>
     <button type="button" class="add-menu-option" data-action="record">● record</button>
@@ -29,6 +35,11 @@
   <button id="textBtn" class="tool-btn" title="Add a text box" aria-label="Text tool">
     <span class="icon">T</span>
   </button>
+
+  <button id="imageBtn" class="tool-btn" title="Upload an image" aria-label="Upload an image">
+    <span class="icon image-icon"></span>
+  </button>
+  <input type="file" id="imageFileInput" accept="image/*" hidden />
 
   <button id="playAllBtn" title="Play the entire canvas, left to right" aria-label="Play entire canvas">
     <span class="icon">▶</span>

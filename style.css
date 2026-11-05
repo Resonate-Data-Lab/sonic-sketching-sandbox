@@ -96,7 +96,15 @@ html, body {
 }
 
 #recordBtn .icon {
-  transform: translateY(-1px);
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+}
+
+#recordBtn .wave-bar {
+  width: 2.5px;
+  background: currentColor;
+  border-radius: 1px;
 }
 
 #recordBtn.recording {
@@ -108,7 +116,7 @@ html, body {
 }
 
 #recordBtn.recording .icon {
-  /* morph the + into a stop square via content swap, see JS */
+  /* the waveform swaps for a stop square via innerHTML, see JS */
   font-size: 16px;
 }
 
@@ -214,7 +222,7 @@ html, body {
 #playAllBtn {
   position: fixed;
   top: 20px;
-  left: 212px;
+  left: 276px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -289,10 +297,34 @@ html, body {
   left: 148px;
 }
 
+#imageBtn {
+  left: 212px;
+}
+
+.image-icon {
+  display: block;
+  width: 17px;
+  height: 13px;
+  border: 1.8px solid currentColor;
+  border-radius: 2px;
+  position: relative;
+}
+
+.image-icon::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 #timer {
   position: fixed;
   top: 28px;
-  left: 276px;
+  left: 340px;
   font-size: 13px;
   color: var(--accent);
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -361,7 +393,8 @@ html, body {
 
 .sound-node .delete,
 .stroke .delete,
-.text-box .delete {
+.text-box .delete,
+.image-box .delete {
   position: absolute;
   top: -8px;
   right: -8px;
@@ -382,7 +415,8 @@ html, body {
 
 .sound-node .duplicate,
 .stroke .duplicate,
-.text-box .duplicate {
+.text-box .duplicate,
+.image-box .duplicate {
   position: absolute;
   bottom: -8px;
   right: -8px;
@@ -401,7 +435,9 @@ html, body {
 .stroke .duplicate::before,
 .stroke .duplicate::after,
 .text-box .duplicate::before,
-.text-box .duplicate::after {
+.text-box .duplicate::after,
+.image-box .duplicate::before,
+.image-box .duplicate::after {
   content: '';
   position: absolute;
   width: 8px;
@@ -413,7 +449,8 @@ html, body {
 
 .sound-node .duplicate::before,
 .stroke .duplicate::before,
-.text-box .duplicate::before {
+.text-box .duplicate::before,
+.image-box .duplicate::before {
   top: 3.5px;
   left: 3.5px;
   z-index: 1;
@@ -421,7 +458,8 @@ html, body {
 
 .sound-node .duplicate::after,
 .stroke .duplicate::after,
-.text-box .duplicate::after {
+.text-box .duplicate::after,
+.image-box .duplicate::after {
   top: 7px;
   left: 7px;
   z-index: 2;
@@ -432,7 +470,9 @@ html, body {
 .stroke:hover .delete,
 .stroke:hover .duplicate,
 .text-box:hover .delete,
-.text-box:hover .duplicate {
+.text-box:hover .duplicate,
+.image-box:hover .delete,
+.image-box:hover .duplicate {
   display: flex;
 }
 
@@ -561,6 +601,33 @@ html, body {
   border-bottom-color: var(--accent);
 }
 
+/* --- an uploaded image: just the image itself, no extra chrome --- */
+.image-box {
+  position: absolute;
+  max-width: 220px;
+  max-height: 220px;
+  cursor: grab;
+  touch-action: none;
+  z-index: 4;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.image-box:active {
+  cursor: grabbing;
+}
+
+.image-box img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  pointer-events: none;
+}
+
+.image-box.selected {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+
 /* --- the rubber-band selection box --- */
 .marquee {
   position: absolute;
@@ -574,7 +641,8 @@ html, body {
    so a stroke can always be drawn even on top of another object --- */
 body.pen-active .sound-node,
 body.pen-active .stroke,
-body.pen-active .text-box {
+body.pen-active .text-box,
+body.pen-active .image-box {
   pointer-events: none;
 }
 
@@ -585,6 +653,8 @@ body.pen-active .stroke .delete,
 body.pen-active .stroke .duplicate,
 body.pen-active .text-box .delete,
 body.pen-active .text-box .duplicate,
-body.pen-active .text-box .text-content {
+body.pen-active .text-box .text-content,
+body.pen-active .image-box .delete,
+body.pen-active .image-box .duplicate {
   pointer-events: none;
 }
