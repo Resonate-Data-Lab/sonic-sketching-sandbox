@@ -303,22 +303,34 @@ html, body {
 
 .image-icon {
   display: block;
-  width: 17px;
-  height: 13px;
+  width: 18px;
+  height: 14px;
   border: 1.8px solid currentColor;
   border-radius: 2px;
   position: relative;
+  overflow: hidden;
 }
 
 .image-icon::before {
   content: '';
   position: absolute;
   top: 2px;
-  left: 2px;
+  left: 2.5px;
   width: 3.5px;
   height: 3.5px;
   border-radius: 50%;
   background: currentColor;
+}
+
+.image-icon::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -2px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-bottom: 8px solid currentColor;
 }
 
 #timer {
