@@ -585,6 +585,7 @@ html, body {
 /* --- a standalone text box: just floating text, like the note under a sound --- */
 .text-box {
   position: absolute;
+  width: max-content; /* size to content, not to whatever space is left to the canvas edge */
   max-width: 260px;
   cursor: grab;
   touch-action: none;
@@ -624,6 +625,7 @@ html, body {
 /* --- an uploaded image: just the image itself, no extra chrome --- */
 .image-box {
   position: absolute;
+  width: max-content; /* same fix as .text-box: size to the image, not available edge space */
   max-width: 360px;
   max-height: 360px;
   cursor: grab;
