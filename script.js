@@ -566,7 +566,12 @@ function createSoundNode(x, y, url, id) {
   reverseInput.className = 'fx-reverse';
   reverseLabel.append(reverseInput, document.createTextNode(' reverse'));
 
-  fxPopup.append(speedLabel, reverbLabel, reverseLabel);
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'fx-reset';
+  resetBtn.textContent = 'reset';
+
+  fxPopup.append(speedLabel, reverbLabel, reverseLabel, resetBtn);
 
   const note = document.createElement('div');
   note.className = 'note';
@@ -592,21 +597,28 @@ function createSoundNode(x, y, url, id) {
     reverseInput.checked = reverse;
   };
 
-  wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput);
+  wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput, resetBtn);
   scheduleObjectSave(node);
   return node;
 }
 
 let openFxPopup = null;
 
+function closeFxPopup() {
+  if (!openFxPopup) return;
+  openFxPopup.hidden = true;
+  const owner = openFxPopup.closest('.sound-node');
+  if (owner) owner.classList.remove('fx-open');
+  openFxPopup = null;
+}
+
 document.addEventListener('pointerdown', (e) => {
   if (!openFxPopup) return;
   if (openFxPopup.contains(e.target)) return;
-  openFxPopup.hidden = true;
-  openFxPopup = null;
+  closeFxPopup();
 });
 
-function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput) {
+function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput, resetBtn) {
   let activePlays = 0;
   const activeSources = [];
 
@@ -674,9 +686,22 @@ function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, rever
   knob.addEventListener('pointerdown', (e) => e.stopPropagation());
   knob.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (openFxPopup && openFxPopup !== fxPopup) openFxPopup.hidden = true;
+    if (openFxPopup && openFxPopup !== fxPopup) closeFxPopup();
     fxPopup.hidden = !fxPopup.hidden;
+    node.classList.toggle('fx-open', !fxPopup.hidden);
     openFxPopup = fxPopup.hidden ? null : fxPopup;
+  });
+
+  // auto-close once the pointer has been away from the node (and its popup —
+  // a DOM descendant, so hovering it doesn't count as "away") for a bit, with
+  // a short grace period so crossing the small visual gap to reach a slider doesn't close it
+  let fxCloseTimer = null;
+  node.addEventListener('pointerenter', () => clearTimeout(fxCloseTimer));
+  node.addEventListener('pointerleave', () => {
+    if (fxPopup.hidden) return;
+    fxCloseTimer = setTimeout(() => {
+      if (openFxPopup === fxPopup) closeFxPopup();
+    }, 400);
   });
 
   fxPopup.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -691,6 +716,11 @@ function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, rever
   });
   reverseInput.addEventListener('change', () => {
     node.fxReverse = reverseInput.checked;
+    scheduleObjectSave(node);
+  });
+  resetBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    node.setFx({ speed: 1, reverb: 0, reverse: false });
     scheduleObjectSave(node);
   });
 

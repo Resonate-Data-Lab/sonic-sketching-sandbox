@@ -527,6 +527,13 @@ html, body {
   transform-origin: bottom center;
 }
 
+/* while a sound's fx popup is open, lift the whole node above everything else
+   on the canvas — otherwise a .sound-node's own z-index (10) is lower than a
+   .text-box's (11), and the popup's local z-index can't escape that */
+.sound-node.fx-open {
+  z-index: 100;
+}
+
 .sound-node .fx-popup[hidden] {
   display: none;
 }
@@ -566,6 +573,22 @@ html, body {
   flex-direction: row;
   align-items: center;
   gap: 6px;
+}
+
+.sound-node .fx-popup .fx-reset {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--pencil);
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sound-node .fx-popup .fx-reset:hover {
+  color: var(--accent);
 }
 
 .sound-node .bars {
