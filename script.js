@@ -262,7 +262,14 @@ async function copySelection() {
         if (el.classList.contains('sound-node')) {
           const blob = await (await fetch(el.dataset.url)).blob();
           const note = el.querySelector('.note');
-          return { type: 'sound', relX, relY, blob, noteText: note ? note.textContent : '' };
+          return {
+            type: 'sound',
+            relX,
+            relY,
+            blob,
+            noteText: note ? note.textContent : '',
+            fx: { speed: el.fxSpeed, reverb: el.fxReverb, reverse: el.fxReverse },
+          };
         }
         if (el.classList.contains('stroke')) {
           const path = el.querySelector('path');
@@ -310,6 +317,7 @@ function pasteClipboard() {
         const node = createSoundNode(x, y, url);
         const note = node.querySelector('.note');
         if (note) note.textContent = item.noteText;
+        if (item.fx) node.setFx(item.fx);
         return node;
       }
       if (item.type === 'stroke') {
@@ -389,6 +397,109 @@ function makeDraggable(el, { onClick } = {}) {
   });
 }
 
+// ---------- audio playback + light effects (speed, reverse, reverb) ----------
+
+let audioContext = null;
+let reverbImpulseBuffer = null;
+
+function getAudioContext() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioContext.state === 'suspended') audioContext.resume();
+  return audioContext;
+}
+
+// a short synthetic impulse response (decaying noise) — no external audio
+// file needed just to get a basic, recognizable reverb tail
+function getReverbImpulse(ctx) {
+  if (!reverbImpulseBuffer) {
+    const duration = 2;
+    const length = Math.round(ctx.sampleRate * duration);
+    reverbImpulseBuffer = ctx.createBuffer(2, length, ctx.sampleRate);
+    for (let channel = 0; channel < 2; channel++) {
+      const data = reverbImpulseBuffer.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.5);
+      }
+    }
+  }
+  return reverbImpulseBuffer;
+}
+
+function reverseBuffer(ctx, buffer) {
+  const reversed = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+    const data = buffer.getChannelData(channel).slice().reverse();
+    reversed.copyToChannel(data, channel);
+  }
+  return reversed;
+}
+
+// decodes a node's audio once and caches the result on the node itself,
+// since decoding is relatively expensive and this app encourages rapid re-triggering
+function decodeNodeBuffer(node) {
+  if (!node._bufferPromise) {
+    node._bufferPromise = fetch(node.dataset.url)
+      .then((res) => res.arrayBuffer())
+      .then((data) => getAudioContext().decodeAudioData(data));
+  }
+  return node._bufferPromise;
+}
+
+// plays a node's sound through its currently configured speed/reverse/reverb,
+// reporting progress (0-1) for the existing progress-bar UI, and resolving when
+// playback actually finishes (including if stopped early, so cleanup always runs)
+function playNodeSound(node, { onProgress, registerSource, unregisterSource } = {}) {
+  const ctx = getAudioContext();
+  return decodeNodeBuffer(node).then((buffer) => {
+    const speed = node.fxSpeed || 1;
+    const reverbAmount = node.fxReverb || 0;
+
+    let sourceBuffer = buffer;
+    if (node.fxReverse) {
+      if (!node._reversedBuffer) node._reversedBuffer = reverseBuffer(ctx, buffer);
+      sourceBuffer = node._reversedBuffer;
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = sourceBuffer;
+    source.playbackRate.value = speed;
+
+    const dryGain = ctx.createGain();
+    dryGain.gain.value = 1 - reverbAmount;
+    const wetGain = ctx.createGain();
+    wetGain.gain.value = reverbAmount;
+    const convolver = ctx.createConvolver();
+    convolver.buffer = getReverbImpulse(ctx);
+
+    source.connect(dryGain).connect(ctx.destination);
+    source.connect(convolver).connect(wetGain).connect(ctx.destination);
+
+    const startTime = ctx.currentTime;
+    const playDuration = sourceBuffer.duration / speed;
+    let rafId = null;
+
+    function tick() {
+      const elapsed = ctx.currentTime - startTime;
+      if (onProgress) onProgress(Math.min(1, elapsed / playDuration));
+      if (elapsed < playDuration) rafId = requestAnimationFrame(tick);
+    }
+    if (onProgress) rafId = requestAnimationFrame(tick);
+    if (registerSource) registerSource(source);
+
+    return new Promise((resolve) => {
+      source.onended = () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        if (onProgress) onProgress(1);
+        if (unregisterSource) unregisterSource(source);
+        resolve();
+      };
+      source.start();
+    });
+  });
+}
+
 // ---------- sound nodes: draggable, playable, annotatable ----------
 
 function createSoundNode(x, y, url, id) {
@@ -398,6 +509,9 @@ function createSoundNode(x, y, url, id) {
   node.style.top = `${y}px`;
   node.dataset.url = url;
   node.dataset.objectId = id || crypto.randomUUID();
+  node.fxSpeed = 1;
+  node.fxReverb = 0;
+  node.fxReverse = false;
 
   const wobble = (Math.random() * 8 - 4).toFixed(1);
   node.style.transform = `rotate(${wobble}deg)`;
@@ -415,6 +529,45 @@ function createSoundNode(x, y, url, id) {
   dup.className = 'duplicate';
   dup.title = 'Duplicate this sound';
 
+  const knob = document.createElement('div');
+  knob.className = 'knob';
+  knob.title = 'Edit sound (speed, reverb, reverse)';
+
+  const fxPopup = document.createElement('div');
+  fxPopup.className = 'fx-popup';
+  fxPopup.hidden = true;
+
+  const speedLabel = document.createElement('label');
+  speedLabel.textContent = 'speed';
+  const speedInput = document.createElement('input');
+  speedInput.type = 'range';
+  speedInput.className = 'fx-speed';
+  speedInput.min = '0.5';
+  speedInput.max = '1.5';
+  speedInput.step = '0.01';
+  speedInput.value = '1';
+  speedLabel.appendChild(speedInput);
+
+  const reverbLabel = document.createElement('label');
+  reverbLabel.textContent = 'reverb';
+  const reverbInput = document.createElement('input');
+  reverbInput.type = 'range';
+  reverbInput.className = 'fx-reverb';
+  reverbInput.min = '0';
+  reverbInput.max = '1';
+  reverbInput.step = '0.01';
+  reverbInput.value = '0';
+  reverbLabel.appendChild(reverbInput);
+
+  const reverseLabel = document.createElement('label');
+  reverseLabel.className = 'fx-reverse-row';
+  const reverseInput = document.createElement('input');
+  reverseInput.type = 'checkbox';
+  reverseInput.className = 'fx-reverse';
+  reverseLabel.append(reverseInput, document.createTextNode(' reverse'));
+
+  fxPopup.append(speedLabel, reverbLabel, reverseLabel);
+
   const note = document.createElement('div');
   note.className = 'note';
   note.contentEditable = 'true';
@@ -424,18 +577,38 @@ function createSoundNode(x, y, url, id) {
   const bars = document.createElement('div');
   bars.className = 'bars';
 
-  node.append(play, del, dup, bars, note);
+  node.append(play, del, dup, knob, fxPopup, bars, note);
   canvas.appendChild(node);
   growCanvasToFit(x, y);
 
-  wireUpNode(node, del, dup, note, bars);
+  // lets loading/duplicating/pasting set speed/reverb/reverse on an existing node,
+  // keeping the JS state and the slider/checkbox UI in sync in one place
+  node.setFx = ({ speed = 1, reverb = 0, reverse = false }) => {
+    node.fxSpeed = speed;
+    node.fxReverb = reverb;
+    node.fxReverse = reverse;
+    speedInput.value = speed;
+    reverbInput.value = reverb;
+    reverseInput.checked = reverse;
+  };
+
+  wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput);
   scheduleObjectSave(node);
   return node;
 }
 
-function wireUpNode(node, del, dup, note, bars) {
+let openFxPopup = null;
+
+document.addEventListener('pointerdown', (e) => {
+  if (!openFxPopup) return;
+  if (openFxPopup.contains(e.target)) return;
+  openFxPopup.hidden = true;
+  openFxPopup = null;
+});
+
+function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput) {
   let activePlays = 0;
-  const activeAudios = [];
+  const activeSources = [];
 
   function trigger() {
     activePlays++;
@@ -448,29 +621,22 @@ function wireUpNode(node, del, dup, note, bars) {
     bar.appendChild(fill);
     bars.appendChild(bar);
 
-    const audio = new Audio(node.dataset.url);
-    activeAudios.push(audio);
     const finish = () => {
       bar.remove();
-      activeAudios.splice(activeAudios.indexOf(audio), 1);
       activePlays = Math.max(0, activePlays - 1);
       if (activePlays === 0) node.classList.remove('playing');
     };
 
-    audio.addEventListener('timeupdate', () => {
-      if (audio.duration) fill.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
-    });
-
-    return new Promise((resolve) => {
-      audio.addEventListener('ended', () => {
-        finish();
-        resolve();
-      });
-      audio.play().catch(() => {
-        finish();
-        resolve();
-      });
-    });
+    return playNodeSound(node, {
+      onProgress: (fraction) => {
+        fill.style.width = `${fraction * 100}%`;
+      },
+      registerSource: (source) => activeSources.push(source),
+      unregisterSource: (source) => {
+        const i = activeSources.indexOf(source);
+        if (i >= 0) activeSources.splice(i, 1);
+      },
+    }).finally(finish);
   }
 
   // let the "play entire canvas" feature trigger this node the same way a click does
@@ -478,7 +644,13 @@ function wireUpNode(node, del, dup, note, bars) {
 
   // shared by the "x" button and the Delete/Backspace key on a selection
   node.deleteObject = () => {
-    activeAudios.forEach((audio) => audio.pause());
+    activeSources.forEach((source) => {
+      try {
+        source.stop();
+      } catch (err) {
+        // already stopped/finished — nothing to do
+      }
+    });
     URL.revokeObjectURL(node.dataset.url);
     deleteObjectRemote(node.dataset.objectId);
     node.remove();
@@ -486,7 +658,7 @@ function wireUpNode(node, del, dup, note, bars) {
 
   makeDraggable(node, { onClick: trigger });
 
-  // keep clicks/typing in the note, delete, or duplicate controls from starting a drag or a play
+  // keep clicks/typing in the note, delete, duplicate, or fx controls from starting a drag or a play
   del.addEventListener('pointerdown', (e) => e.stopPropagation());
   del.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -497,6 +669,29 @@ function wireUpNode(node, del, dup, note, bars) {
   dup.addEventListener('click', (e) => {
     e.stopPropagation();
     duplicateNode(node, note);
+  });
+
+  knob.addEventListener('pointerdown', (e) => e.stopPropagation());
+  knob.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openFxPopup && openFxPopup !== fxPopup) openFxPopup.hidden = true;
+    fxPopup.hidden = !fxPopup.hidden;
+    openFxPopup = fxPopup.hidden ? null : fxPopup;
+  });
+
+  fxPopup.addEventListener('pointerdown', (e) => e.stopPropagation());
+  fxPopup.addEventListener('click', (e) => e.stopPropagation());
+  speedInput.addEventListener('input', () => {
+    node.fxSpeed = parseFloat(speedInput.value);
+    scheduleObjectSave(node);
+  });
+  reverbInput.addEventListener('input', () => {
+    node.fxReverb = parseFloat(reverbInput.value);
+    scheduleObjectSave(node);
+  });
+  reverseInput.addEventListener('change', () => {
+    node.fxReverse = reverseInput.checked;
+    scheduleObjectSave(node);
   });
 
   note.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -521,6 +716,7 @@ async function duplicateNode(sourceNode, sourceNote) {
     const newNode = createSoundNode(x, y, url);
     const newNote = newNode.querySelector('.note');
     if (newNote) newNote.textContent = sourceNote.textContent;
+    newNode.setFx({ speed: sourceNode.fxSpeed, reverb: sourceNode.fxReverb, reverse: sourceNode.fxReverse });
   } catch (err) {
     showToast('Could not duplicate that sound.');
   }
@@ -911,6 +1107,9 @@ async function serializeOne(el) {
       rotation: rotationMatch ? parseFloat(rotationMatch[1]) : 0,
       note: note ? note.textContent : '',
       audio: { mimeType: blob.type || 'audio/webm', base64 },
+      speed: el.fxSpeed,
+      reverb: el.fxReverb,
+      reverse: el.fxReverse,
     };
   }
 
@@ -955,6 +1154,7 @@ function deserializeCanvas(data) {
       node.style.transform = `rotate(${n.rotation || 0}deg)`;
       const note = node.querySelector('.note');
       if (note) note.textContent = n.note || '';
+      node.setFx({ speed: n.speed || 1, reverb: n.reverb || 0, reverse: n.reverse || false });
     } else if (n.type === 'stroke') {
       createStrokeElement(n.x, n.y, n.width, n.height, n.pathD, n.id);
     } else if (n.type === 'text') {

@@ -496,6 +496,78 @@ html, body {
   display: flex;
 }
 
+/* --- the "knob" that opens speed/reverb/reverse controls, opposite the delete button --- */
+.sound-node .knob {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.5px solid var(--pencil);
+  display: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.sound-node:hover .knob {
+  display: flex;
+}
+
+.sound-node .knob::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 1.5px;
+  height: 7px;
+  background: var(--pencil);
+  transform: translateX(-50%) rotate(-25deg);
+  transform-origin: bottom center;
+}
+
+.sound-node .fx-popup[hidden] {
+  display: none;
+}
+
+.sound-node .fx-popup {
+  position: absolute;
+  bottom: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 140px;
+  background: var(--paper);
+  border: 2px dashed var(--ink);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.12);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+  pointer-events: auto;
+}
+
+.sound-node .fx-popup label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--pencil);
+}
+
+.sound-node .fx-popup input[type="range"] {
+  width: 100%;
+}
+
+.sound-node .fx-popup .fx-reverse-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
 .sound-node .bars {
   position: absolute;
   top: 100px;
@@ -671,6 +743,8 @@ body.pen-active .image-box {
 body.pen-active .sound-node .delete,
 body.pen-active .sound-node .duplicate,
 body.pen-active .sound-node .note,
+body.pen-active .sound-node .knob,
+body.pen-active .sound-node .fx-popup,
 body.pen-active .stroke .delete,
 body.pen-active .stroke .duplicate,
 body.pen-active .text-box .delete,
