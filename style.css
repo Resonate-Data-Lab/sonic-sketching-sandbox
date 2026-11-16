@@ -20,14 +20,22 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* --- the blank canvas, with a faint sketchbook dot-grid --- */
+/* --- the scrollable viewport onto the canvas --- */
 #board {
   position: absolute;
   inset: 0;
+  overflow: auto;
+  touch-action: none;
+}
+
+/* --- the canvas itself: starts at viewport size, grows as content needs more room --- */
+#canvas {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
   background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
   background-size: 28px 28px;
   background-position: -4px -4px;
-  touch-action: none;
 }
 
 /* --- the playhead for "play entire canvas" mode --- */

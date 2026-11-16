@@ -1,6 +1,7 @@
 // --- sonic sketch: record a sound, drag it around, play it back ---
 
 const board = document.getElementById('board');
+const canvas = document.getElementById('canvas');
 const recordBtn = document.getElementById('recordBtn');
 const recordIcon = recordBtn.querySelector('.icon');
 const waveformIconHTML = recordIcon.innerHTML;
@@ -190,10 +191,29 @@ function stopTimer() {
   timerEl.hidden = true;
 }
 
+// ---------- the scrollable, growing canvas ----------
+
+// converts a viewport/client coordinate into canvas-space, accounting for
+// however far the canvas is currently scrolled (getBoundingClientRect already
+// reflects scroll position, so no manual offset bookkeeping is needed)
+function toCanvasPoint(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+
+const GROW_MARGIN = 300; // flat margin covering most object sizes without measuring each one
+
+function growCanvasToFit(x, y) {
+  const neededWidth = x + GROW_MARGIN;
+  const neededHeight = y + GROW_MARGIN;
+  if (neededWidth > canvas.offsetWidth) canvas.style.width = `${neededWidth}px`;
+  if (neededHeight > canvas.offsetHeight) canvas.style.height = `${neededHeight}px`;
+}
+
 // ---------- placing new sounds near the button ----------
 
 function nextSpawnPosition() {
-  const origin = { x: 150, y: 110 };
+  const origin = toCanvasPoint(150, 110);
   const step = 64;
   const perRow = 6;
   const row = Math.floor(spawnIndex / perRow);
@@ -333,8 +353,11 @@ function makeDraggable(el, { onClick } = {}) {
     }
     if (moved) {
       startPositions.forEach(({ item, left, top }) => {
-        item.style.left = `${left + dx}px`;
-        item.style.top = `${top + dy}px`;
+        const newLeft = left + dx;
+        const newTop = top + dy;
+        item.style.left = `${newLeft}px`;
+        item.style.top = `${newTop}px`;
+        growCanvasToFit(newLeft, newTop);
       });
     }
   });
@@ -388,7 +411,8 @@ function createSoundNode(x, y, url, id) {
   bars.className = 'bars';
 
   node.append(play, del, dup, bars, note);
-  board.appendChild(node);
+  canvas.appendChild(node);
+  growCanvasToFit(x, y);
 
   wireUpNode(node, del, dup, note, bars);
   scheduleObjectSave(node);
@@ -586,8 +610,12 @@ function startStroke(e) {
   document.addEventListener('pointerup', onUp);
 }
 
-function finalizeStroke(points) {
-  if (points.length < 2) return;
+function finalizeStroke(rawPoints) {
+  if (rawPoints.length < 2) return;
+
+  // the live preview tracks raw client points; only the finalized, permanent
+  // stroke needs to be converted into canvas-space
+  const points = rawPoints.map((p) => toCanvasPoint(p.x, p.y));
 
   const pad = 6;
   const xs = points.map((p) => p.x);
@@ -629,7 +657,8 @@ function createStrokeElement(left, top, width, height, pathD, id) {
   dup.title = 'Duplicate this doodle';
 
   strokeEl.append(svg, del, dup);
-  board.appendChild(strokeEl);
+  canvas.appendChild(strokeEl);
+  growCanvasToFit(left, top);
 
   strokeEl.deleteObject = () => {
     deleteObjectRemote(strokeEl.dataset.objectId);
@@ -711,7 +740,8 @@ function createTextElement(x, y, text, id) {
   dup.title = 'Duplicate this text';
 
   el.append(content, del, dup);
-  board.appendChild(el);
+  canvas.appendChild(el);
+  growCanvasToFit(x, y);
 
   el.deleteObject = () => {
     deleteObjectRemote(el.dataset.objectId);
@@ -794,7 +824,8 @@ function createImageElement(x, y, url, id) {
   dup.title = 'Duplicate this image';
 
   el.append(img, del, dup);
-  board.appendChild(el);
+  canvas.appendChild(el);
+  growCanvasToFit(x, y);
 
   el.deleteObject = () => {
     deleteObjectRemote(el.dataset.objectId);
