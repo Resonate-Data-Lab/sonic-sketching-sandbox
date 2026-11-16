@@ -210,6 +210,19 @@ function growCanvasToFit(x, y) {
   if (neededHeight > canvas.offsetHeight) canvas.style.height = `${neededHeight}px`;
 }
 
+const EDGE_SCROLL_ZONE = 40; // px from the viewport edge that triggers auto-scroll while dragging
+const EDGE_SCROLL_SPEED = 18; // px scrolled per drag-move tick while in that zone
+
+// lets you drag something off the visible edge and see the view follow, so you
+// can tell how far you're actually moving it
+function autoScrollForDrag(clientX, clientY) {
+  const rect = board.getBoundingClientRect();
+  if (clientX < rect.left + EDGE_SCROLL_ZONE) board.scrollLeft -= EDGE_SCROLL_SPEED;
+  else if (clientX > rect.right - EDGE_SCROLL_ZONE) board.scrollLeft += EDGE_SCROLL_SPEED;
+  if (clientY < rect.top + EDGE_SCROLL_ZONE) board.scrollTop -= EDGE_SCROLL_SPEED;
+  else if (clientY > rect.bottom - EDGE_SCROLL_ZONE) board.scrollTop += EDGE_SCROLL_SPEED;
+}
+
 // ---------- placing new sounds near the button ----------
 
 function nextSpawnPosition() {
@@ -359,6 +372,7 @@ function makeDraggable(el, { onClick } = {}) {
         item.style.top = `${newTop}px`;
         growCanvasToFit(newLeft, newTop);
       });
+      autoScrollForDrag(e.clientX, e.clientY);
     }
   });
 
@@ -1096,6 +1110,12 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- play the entire canvas, left to right ----------
 
+const PLAYHEAD_VIEWPORT_FRACTION = 0.25; // keep the playhead 25% in from the left edge while following it
+
+function scrollToShowPlayhead(x) {
+  board.scrollLeft = Math.max(0, x - board.clientWidth * PLAYHEAD_VIEWPORT_FRACTION);
+}
+
 playAllBtn.addEventListener('click', () => {
   const nodes = Array.from(document.querySelectorAll('.sound-node'));
   if (nodes.length === 0) {
@@ -1110,13 +1130,17 @@ playAllBtn.addEventListener('click', () => {
   const originX = positioned[0].x;
   let pending = positioned.length;
   playAllBtn.classList.add('playing');
+  board.style.overflow = 'hidden'; // no manual scrolling while the view is following the playhead
 
   positioned.forEach(({ node, x }) => {
     const delay = ((x - originX) / CANVAS_PIXELS_PER_SECOND) * 1000;
     setTimeout(() => {
       Promise.resolve(node.triggerSound()).then(() => {
         pending--;
-        if (pending === 0) playAllBtn.classList.remove('playing');
+        if (pending === 0) {
+          playAllBtn.classList.remove('playing');
+          board.style.overflow = '';
+        }
       });
     }, delay);
   });
@@ -1125,10 +1149,13 @@ playAllBtn.addEventListener('click', () => {
   const playbackStart = performance.now();
   playheadEl.style.left = `${originX}px`;
   playheadEl.classList.add('active');
+  scrollToShowPlayhead(originX);
 
   function stepPlayhead() {
     const elapsedSeconds = (performance.now() - playbackStart) / 1000;
-    playheadEl.style.left = `${originX + elapsedSeconds * CANVAS_PIXELS_PER_SECOND}px`;
+    const x = originX + elapsedSeconds * CANVAS_PIXELS_PER_SECOND;
+    playheadEl.style.left = `${x}px`;
+    scrollToShowPlayhead(x);
     if (pending > 0) {
       playheadRAF = requestAnimationFrame(stepPlayhead);
     } else {
