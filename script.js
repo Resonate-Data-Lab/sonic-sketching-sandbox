@@ -1372,11 +1372,11 @@ async function openTray(bookId) {
 function renderTray(bookId, book) {
   trayList.innerHTML = '';
 
-  (book.sketches || []).forEach((sketch) => {
+  (book.sketches || []).forEach((sketch, i) => {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'tray-item';
-    item.textContent = sketch.name || sketch.id;
+    item.textContent = sketch.name || `sketch ${i + 1}`;
     if (sketch.id === currentSketchId) item.classList.add('current');
     item.addEventListener('click', () => navigateToSketch(sketch.id));
     trayList.appendChild(item);
@@ -1410,11 +1410,12 @@ async function addNewSketchToBook(bookId) {
     if (!res.ok) throw new Error('create failed');
     const { id } = await res.json();
 
-    await fetch(`/api/book/${bookId}`, {
+    const putRes = await fetch(`/api/book/${bookId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sketch: { id, name: '' } }),
     });
+    if (!putRes.ok) throw new Error('link failed');
 
     // the new sketch is already known to be empty — no need to re-fetch it, just adopt it directly
     deserializeCanvas({ nodes: [] });
