@@ -53,13 +53,16 @@
     <span class="icon">↗</span>
   </button>
   <div id="sharePopup" class="add-menu share-popup" hidden>
-    <div id="shareNameRow" class="share-popup-row">
+    <div id="shareNameRow" class="share-popup-row" hidden>
       <input type="text" id="shareNameInput" placeholder="name this sketch (optional)" />
     </div>
-    <div class="share-popup-label">anyone with this link can view and edit</div>
-    <div class="share-popup-row">
-      <input type="text" id="shareLink" readonly />
-      <button type="button" id="copyLinkBtn">copy</button>
+    <button type="button" id="createLinkBtn" class="add-menu-option" hidden>create link</button>
+    <div id="shareLinkSection" hidden>
+      <div id="shareLinkLabel" class="share-popup-label">anyone with this link can view and edit</div>
+      <div class="share-popup-row">
+        <input type="text" id="shareLink" readonly />
+        <button type="button" id="copyLinkBtn">copy</button>
+      </div>
     </div>
   </div>
 

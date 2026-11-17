@@ -20,6 +20,9 @@ const shareBtn = document.getElementById('shareBtn');
 const sharePopup = document.getElementById('sharePopup');
 const shareNameRow = document.getElementById('shareNameRow');
 const shareNameInput = document.getElementById('shareNameInput');
+const createLinkBtn = document.getElementById('createLinkBtn');
+const shareLinkSection = document.getElementById('shareLinkSection');
+const shareLinkLabel = document.getElementById('shareLinkLabel');
 const shareLinkInput = document.getElementById('shareLink');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
 const sketchbookTab = document.getElementById('sketchbookTab');
@@ -1328,10 +1331,17 @@ createBookBtn.addEventListener('click', async () => {
     currentSketchBookIds = [id];
     updateSketchbookTabState();
     createBookPopup.hidden = true;
-    showSharePopup(`${location.origin}${location.pathname}?book=${id}`);
+    showSharePopup(
+      `${location.origin}${location.pathname}?book=${id}`,
+      'this is your sketchbook link — opens straight into this sketch, with the tray expanded'
+    );
   } catch (err) {
     showToast('Could not create a sketchbook.');
   }
+});
+
+bookNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') createBookBtn.click();
 });
 
 async function openTray(bookId) {
@@ -1453,8 +1463,12 @@ function flushPendingSaves() {
   return Promise.all(pending.map((el) => saveObject(el)));
 }
 
-function showSharePopup(url, { isFirstShare = false } = {}) {
-  shareNameRow.hidden = !isFirstShare; // naming is only offered once, at first share
+// shows the final "here's your link" state — always the last step, never the name-prompt step
+function showSharePopup(url, label) {
+  shareNameRow.hidden = true;
+  createLinkBtn.hidden = true;
+  shareLinkSection.hidden = false;
+  shareLinkLabel.textContent = label || 'anyone with this link can view and edit';
   shareLinkInput.value = url;
   sharePopup.hidden = false;
   shareLinkInput.focus();
@@ -1468,6 +1482,15 @@ shareBtn.addEventListener('click', async () => {
     return;
   }
 
+  // first share: prompt for a name BEFORE creating anything, so it can actually affect the URL
+  shareNameRow.hidden = false;
+  createLinkBtn.hidden = false;
+  shareLinkSection.hidden = true;
+  sharePopup.hidden = false;
+  shareNameInput.focus();
+});
+
+createLinkBtn.addEventListener('click', async () => {
   const data = await serializeCanvas();
   if (data.nodes.length === 0) {
     showToast('Nothing on the canvas yet — add a sound or doodle first.');
@@ -1490,10 +1513,14 @@ shareBtn.addEventListener('click', async () => {
     currentSketchId = id;
     currentSketchName = shareNameInput.value.trim();
     history.pushState(null, '', `?sketch=${id}`);
-    showSharePopup(`${location.origin}${location.pathname}?sketch=${id}`, { isFirstShare: true });
+    showSharePopup(`${location.origin}${location.pathname}?sketch=${id}`);
   } catch (err) {
     showToast('Could not create a share link.');
   }
+});
+
+shareNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') createLinkBtn.click();
 });
 
 copyLinkBtn.addEventListener('click', async () => {
