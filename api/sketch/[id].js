@@ -1,4 +1,4 @@
-import { readSketch, writeObject, deleteObject, sketchExists } from '../../lib/sketch-store.js';
+import { readSketch, writeObject, deleteObject, sketchExists, renameSketch } from '../../lib/sketch-store.js';
 
 export default async function handler(req, res) {
   const { id, objectId } = req.query;
@@ -28,6 +28,24 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error('Failed to save object', err);
       return res.status(500).json({ error: 'Could not save object' });
+    }
+  }
+
+  if (req.method === 'PUT' && !objectId) {
+    const exists = await sketchExists(id);
+    if (!exists) return res.status(404).json({ error: 'Not found' });
+
+    const { name } = req.body || {};
+    if (typeof name !== 'string') {
+      return res.status(400).json({ error: 'Expected a { name } body' });
+    }
+
+    try {
+      await renameSketch(id, name);
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      console.error('Failed to rename sketch', err);
+      return res.status(500).json({ error: 'Could not rename sketch' });
     }
   }
 

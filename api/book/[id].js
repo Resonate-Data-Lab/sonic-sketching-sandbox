@@ -1,4 +1,4 @@
-import { readBook, addSketchToBook, bookExists } from '../../lib/book-store.js';
+import { readBook, addSketchToBook, renameSketchInBook, bookExists } from '../../lib/book-store.js';
 import { addBookToSketch } from '../../lib/sketch-store.js';
 
 export default async function handler(req, res) {
@@ -17,7 +17,18 @@ export default async function handler(req, res) {
     const exists = await bookExists(id);
     if (!exists) return res.status(404).json({ error: 'Not found' });
 
-    const { sketch } = req.body || {};
+    const { sketch, renameSketch } = req.body || {};
+
+    if (renameSketch && typeof renameSketch.id === 'string') {
+      try {
+        const book = await renameSketchInBook(id, renameSketch.id, renameSketch.name || '');
+        return res.status(200).json(book);
+      } catch (err) {
+        console.error('Failed to rename sketch in book', err);
+        return res.status(500).json({ error: 'Could not rename sketch in sketchbook' });
+      }
+    }
+
     if (!sketch || typeof sketch.id !== 'string') {
       return res.status(400).json({ error: 'Expected a { sketch: { id, name } } body' });
     }

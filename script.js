@@ -24,6 +24,8 @@ const createLinkBtn = document.getElementById('createLinkBtn');
 const shareLinkSection = document.getElementById('shareLinkSection');
 const shareLinkInput = document.getElementById('shareLink');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
+const renameInput = document.getElementById('renameInput');
+const renameBtn = document.getElementById('renameBtn');
 const sketchbookTab = document.getElementById('sketchbookTab');
 const createBookPopup = document.getElementById('createBookPopup');
 const bookNameInput = document.getElementById('bookNameInput');
@@ -1485,6 +1487,7 @@ function showSharePopup(url) {
   createLinkBtn.hidden = true;
   shareLinkSection.hidden = false;
   shareLinkInput.value = url;
+  renameInput.value = currentSketchName;
   sharePopup.hidden = false;
   shareLinkInput.focus();
   shareLinkInput.select();
@@ -1551,6 +1554,37 @@ copyLinkBtn.addEventListener('click', async () => {
     copyLinkBtn.textContent = 'copy';
     copyLinkBtn.classList.remove('copied');
   }, 1500);
+});
+
+renameBtn.addEventListener('click', async () => {
+  if (!currentSketchId) return;
+  const name = renameInput.value.trim();
+  try {
+    const res = await fetch(`/api/sketch/${currentSketchId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('rename failed');
+    currentSketchName = name;
+    if (currentSketchBookIds.length > 0) {
+      await fetch(`/api/book/${currentSketchBookIds[0]}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ renameSketch: { id: currentSketchId, name } }),
+      });
+    }
+    renameBtn.textContent = 'saved!';
+    setTimeout(() => {
+      renameBtn.textContent = 'save';
+    }, 1500);
+  } catch (err) {
+    showToast('Could not rename this sketch.');
+  }
+});
+
+renameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') renameBtn.click();
 });
 
 trayCopyBtn.addEventListener('click', async () => {
