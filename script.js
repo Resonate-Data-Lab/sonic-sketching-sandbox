@@ -1333,7 +1333,8 @@ createBookBtn.addEventListener('click', async () => {
     updateSketchbookTabState();
     createBookPopup.hidden = true;
     bookNameInput.value = '';
-    await openTray(id);
+    // we already know the book's contents (just the seed sketch) — no need to re-fetch it
+    showTray(id, { sketches: [{ id: currentSketchId, name: currentSketchName }] });
   } catch (err) {
     showToast('Could not create a sketchbook.');
   }
@@ -1343,19 +1344,28 @@ bookNameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') createBookBtn.click();
 });
 
+function showTray(bookId, book) {
+  trayLinkInput.value = `${location.origin}${location.pathname}?book=${bookId}`;
+  renderTray(bookId, book);
+  tray.hidden = false;
+}
+
+let trayRequestSeq = 0; // guards against an older, slower fetch overwriting a newer one
+
 async function openTray(bookId) {
+  const seq = ++trayRequestSeq;
   try {
     const res = await fetch(`/api/book/${bookId}`);
+    if (seq !== trayRequestSeq) return;
     if (!res.ok) {
       showToast('Could not load this sketchbook.');
       return;
     }
     const book = await res.json();
-    trayLinkInput.value = `${location.origin}${location.pathname}?book=${bookId}`;
-    renderTray(bookId, book);
-    tray.hidden = false;
+    if (seq !== trayRequestSeq) return;
+    showTray(bookId, book);
   } catch (err) {
-    showToast('Could not load this sketchbook.');
+    if (seq === trayRequestSeq) showToast('Could not load this sketchbook.');
   }
 }
 
