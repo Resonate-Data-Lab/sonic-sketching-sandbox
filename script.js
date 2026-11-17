@@ -40,6 +40,9 @@ const CANVAS_PIXELS_PER_SECOND = 140;
 const DRAG_THRESHOLD = 4;
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 const MAX_OBJECT_BYTES = 4 * 1024 * 1024; // stay under Vercel's 4.5MB function body limit, per object
+const IMAGE_DOWNSCALE_THRESHOLD = 1.5 * 1024 * 1024; // only bother resizing files big enough to risk hitting MAX_OBJECT_BYTES
+const IMAGE_MAX_DIMENSION = 1600; // long edge, in px — plenty for a sketch element, far below phone-camera resolution
+const IMAGE_JPEG_QUALITY = 0.82;
 
 let mode = 'pointer'; // 'pointer' | 'pen'
 
@@ -1044,7 +1047,29 @@ imageBtn.addEventListener('click', () => {
   imageFileInput.click();
 });
 
-imageFileInput.addEventListener('change', () => {
+// phone-camera photos routinely exceed MAX_OBJECT_BYTES once base64-encoded — shrink
+// the pixel dimensions (the actual source of the bloat) before they ever reach that check
+async function downscaleImageIfNeeded(file) {
+  if (file.size <= IMAGE_DOWNSCALE_THRESHOLD) return file;
+
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  // PNG stays PNG so transparency survives; everything else re-encodes as JPEG for the size win
+  const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, IMAGE_JPEG_QUALITY));
+  return blob || file;
+}
+
+imageFileInput.addEventListener('change', async () => {
   const file = imageFileInput.files && imageFileInput.files[0];
   imageFileInput.value = '';
   if (!file) return;
@@ -1052,7 +1077,15 @@ imageFileInput.addEventListener('change', () => {
     showToast('Please choose an image file (jpg, png, etc).');
     return;
   }
-  const url = URL.createObjectURL(file);
+
+  let blob = file;
+  try {
+    blob = await downscaleImageIfNeeded(file);
+  } catch (err) {
+    // if decoding/resizing fails for any reason, fall back to the original file untouched
+  }
+
+  const url = URL.createObjectURL(blob);
   const { x, y } = nextSpawnPosition();
   createImageElement(x, y, url);
 });
