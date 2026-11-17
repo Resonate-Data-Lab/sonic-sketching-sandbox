@@ -195,6 +195,11 @@ html, body {
   margin-top: 4px;
 }
 
+.share-popup-row[hidden],
+.add-menu-option[hidden] {
+  display: none;
+}
+
 .share-popup-row {
   display: flex;
   gap: 6px;

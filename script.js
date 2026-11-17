@@ -1272,7 +1272,7 @@ async function loadSketchFromURL() {
 
 function updateSketchbookTabState() {
   const inBook = currentSketchBookIds.length > 0;
-  sketchbookTab.textContent = inBook ? '📚 sketchbook' : '+ sketchbook';
+  sketchbookTab.textContent = inBook ? 'sketchbook' : '+ sketchbook';
   sketchbookTab.classList.toggle('in-book', inBook);
 }
 
