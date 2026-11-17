@@ -1418,6 +1418,7 @@ async function addNewSketchToBook(bookId) {
       body: JSON.stringify({ sketch: { id, name: '' } }),
     });
     if (!putRes.ok) throw new Error('link failed');
+    const book = await putRes.json();
 
     // the new sketch is already known to be empty — no need to re-fetch it, just adopt it directly
     deserializeCanvas({ nodes: [] });
@@ -1426,7 +1427,7 @@ async function addNewSketchToBook(bookId) {
     currentSketchBookIds = [bookId];
     updateSketchbookTabState();
     history.pushState(null, '', `?sketch=${id}`);
-    tray.hidden = true;
+    showTray(bookId, book); // re-render with the new sketch already marked current, instead of closing the tray
   } catch (err) {
     showToast('Could not add a new sketch to this sketchbook.');
   }
