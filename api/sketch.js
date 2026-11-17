@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const id = await createSketch(data.nodes);
+    const id = await createSketch(data.nodes, { name: data.name, slug: data.name });
     return res.status(201).json({ id });
   } catch (err) {
     console.error('Failed to create sketch', err);

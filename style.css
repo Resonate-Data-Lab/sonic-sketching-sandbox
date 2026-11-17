@@ -365,6 +365,104 @@ html, body {
   z-index: 60;
 }
 
+/* --- the sketchbook tab: always there to discover, bottom-center --- */
+.sketchbook-tab {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--paper);
+  border: 2px dashed var(--ink);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  font-family: inherit;
+  transition: transform 0.12s ease;
+}
+
+.sketchbook-tab:hover {
+  transform: translateX(-50%) scale(1.04);
+}
+
+.sketchbook-tab.in-book {
+  border-style: solid;
+}
+
+.book-popup {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 220px;
+  align-items: stretch;
+}
+
+.book-popup .add-menu-option {
+  text-align: center;
+}
+
+/* --- the tray: the hidden shelf of other sketches in the same sketchbook --- */
+.tray {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 92vw);
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 2px dashed var(--ink);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 2px -3px 0 rgba(0, 0, 0, 0.1);
+  padding: 14px 16px 54px;
+  z-index: 55;
+}
+
+.tray[hidden] {
+  display: none;
+}
+
+.tray-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tray-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tray-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.tray-item.current {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.tray-item.tray-add {
+  color: var(--pencil);
+  border-top: 1px dashed var(--line);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
 /* --- a recorded sound, sitting on the canvas --- */
 .sound-node {
   position: absolute;

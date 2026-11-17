@@ -18,8 +18,16 @@ const imageFileInput = document.getElementById('imageFileInput');
 const drawPreview = document.getElementById('drawPreview');
 const shareBtn = document.getElementById('shareBtn');
 const sharePopup = document.getElementById('sharePopup');
+const shareNameRow = document.getElementById('shareNameRow');
+const shareNameInput = document.getElementById('shareNameInput');
 const shareLinkInput = document.getElementById('shareLink');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
+const sketchbookTab = document.getElementById('sketchbookTab');
+const createBookPopup = document.getElementById('createBookPopup');
+const bookNameInput = document.getElementById('bookNameInput');
+const createBookBtn = document.getElementById('createBookBtn');
+const tray = document.getElementById('tray');
+const trayList = document.getElementById('trayList');
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CANVAS_PIXELS_PER_SECOND = 140;
@@ -40,6 +48,8 @@ let playheadRAF = null;
 let clipboard = null;
 let pasteGeneration = 0;
 let currentSketchId = null;
+let currentSketchName = '';
+let currentSketchBookIds = [];
 let isLoadingSketch = false;
 
 // ---------- feature check ----------
@@ -1202,24 +1212,195 @@ function deserializeCanvas(data) {
 
 // ---------- sharing: save to a link, load from a link, per-object autosave ----------
 
-async function loadSketchFromURL() {
-  const id = new URLSearchParams(location.search).get('sketch');
-  if (!id) return;
-
+async function loadSketchById(id) {
   isLoadingSketch = true;
   try {
     const res = await fetch(`/api/sketch/${id}`);
     if (!res.ok) {
       showToast("That sketch link doesn't exist anymore.");
-      return;
+      return false;
     }
     const data = await res.json();
     deserializeCanvas(data);
     currentSketchId = id;
+    currentSketchName = data.name || '';
+    currentSketchBookIds = data.bookIds || [];
+    updateSketchbookTabState();
+    return true;
   } catch (err) {
     showToast('Could not load that sketch.');
+    return false;
   } finally {
     isLoadingSketch = false;
+  }
+}
+
+async function loadSketchFromURL() {
+  const params = new URLSearchParams(location.search);
+  const sketchId = params.get('sketch');
+  const bookId = params.get('book');
+
+  if (sketchId) {
+    await loadSketchById(sketchId);
+    return;
+  }
+
+  if (bookId) {
+    try {
+      const res = await fetch(`/api/book/${bookId}`);
+      if (!res.ok) {
+        showToast("That sketchbook link doesn't exist anymore.");
+        return;
+      }
+      const book = await res.json();
+      const seed = book.sketches && book.sketches[0];
+      if (!seed) return;
+      history.replaceState(null, '', `${location.pathname}?sketch=${seed.id}`);
+      const loaded = await loadSketchById(seed.id);
+      if (loaded) await openTray(bookId);
+    } catch (err) {
+      showToast('Could not load that sketchbook.');
+    }
+  }
+}
+
+// ---------- sketchbooks: a named collection of sketches, with a lateral tray ----------
+
+function updateSketchbookTabState() {
+  const inBook = currentSketchBookIds.length > 0;
+  sketchbookTab.textContent = inBook ? '📚 sketchbook' : '+ sketchbook';
+  sketchbookTab.classList.toggle('in-book', inBook);
+}
+
+sketchbookTab.addEventListener('click', () => {
+  if (currentSketchBookIds.length > 0) {
+    openTray(currentSketchBookIds[0]);
+  } else {
+    createBookPopup.hidden = !createBookPopup.hidden;
+  }
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (createBookPopup.hidden) return;
+  if (createBookPopup.contains(e.target) || sketchbookTab.contains(e.target)) return;
+  createBookPopup.hidden = true;
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (tray.hidden) return;
+  if (tray.contains(e.target) || sketchbookTab.contains(e.target)) return;
+  tray.hidden = true;
+});
+
+createBookBtn.addEventListener('click', async () => {
+  // a sketchbook needs a real sketch link to seed from — share this one first if it isn't yet
+  if (!currentSketchId) {
+    const data = await serializeCanvas();
+    if (data.nodes.length === 0) {
+      showToast('Nothing on the canvas yet — add a sound or doodle first.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/sketch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, name: '' }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      const { id } = await res.json();
+      currentSketchId = id;
+      history.pushState(null, '', `?sketch=${id}`);
+    } catch (err) {
+      showToast('Could not share this sketch yet.');
+      return;
+    }
+  }
+
+  const name = bookNameInput.value.trim();
+  try {
+    const res = await fetch('/api/book', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug: name, sketchId: currentSketchId, sketchName: currentSketchName }),
+    });
+    if (!res.ok) throw new Error('create failed');
+    const { id } = await res.json();
+    currentSketchBookIds = [id];
+    updateSketchbookTabState();
+    createBookPopup.hidden = true;
+    showSharePopup(`${location.origin}${location.pathname}?book=${id}`);
+  } catch (err) {
+    showToast('Could not create a sketchbook.');
+  }
+});
+
+async function openTray(bookId) {
+  try {
+    const res = await fetch(`/api/book/${bookId}`);
+    if (!res.ok) {
+      showToast('Could not load this sketchbook.');
+      return;
+    }
+    const book = await res.json();
+    renderTray(bookId, book);
+    tray.hidden = false;
+  } catch (err) {
+    showToast('Could not load this sketchbook.');
+  }
+}
+
+function renderTray(bookId, book) {
+  trayList.innerHTML = '';
+
+  (book.sketches || []).forEach((sketch) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tray-item';
+    item.textContent = sketch.name || sketch.id;
+    if (sketch.id === currentSketchId) item.classList.add('current');
+    item.addEventListener('click', () => navigateToSketch(sketch.id));
+    trayList.appendChild(item);
+  });
+
+  const addItem = document.createElement('button');
+  addItem.type = 'button';
+  addItem.className = 'tray-item tray-add';
+  addItem.textContent = '+ new sketch';
+  addItem.addEventListener('click', () => addNewSketchToBook(bookId));
+  trayList.appendChild(addItem);
+}
+
+async function navigateToSketch(sketchId) {
+  if (sketchId === currentSketchId) {
+    tray.hidden = true;
+    return;
+  }
+  history.pushState(null, '', `?sketch=${sketchId}`);
+  tray.hidden = true;
+  await loadSketchById(sketchId);
+}
+
+async function addNewSketchToBook(bookId) {
+  try {
+    const res = await fetch('/api/sketch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nodes: [], name: '' }),
+    });
+    if (!res.ok) throw new Error('create failed');
+    const { id } = await res.json();
+
+    await fetch(`/api/book/${bookId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sketch: { id, name: '' } }),
+    });
+
+    history.pushState(null, '', `?sketch=${id}`);
+    tray.hidden = true;
+    await loadSketchById(id);
+  } catch (err) {
+    showToast('Could not add a new sketch to this sketchbook.');
   }
 }
 
@@ -1272,7 +1453,8 @@ function flushPendingSaves() {
   return Promise.all(pending.map((el) => saveObject(el)));
 }
 
-function showSharePopup(url) {
+function showSharePopup(url, { isFirstShare = false } = {}) {
+  shareNameRow.hidden = !isFirstShare; // naming is only offered once, at first share
   shareLinkInput.value = url;
   sharePopup.hidden = false;
   shareLinkInput.focus();
@@ -1301,13 +1483,14 @@ shareBtn.addEventListener('click', async () => {
     const res = await fetch('/api/sketch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, name: shareNameInput.value.trim() }),
     });
     if (!res.ok) throw new Error('save failed');
     const { id } = await res.json();
     currentSketchId = id;
+    currentSketchName = shareNameInput.value.trim();
     history.pushState(null, '', `?sketch=${id}`);
-    showSharePopup(`${location.origin}${location.pathname}?sketch=${id}`);
+    showSharePopup(`${location.origin}${location.pathname}?sketch=${id}`, { isFirstShare: true });
   } catch (err) {
     showToast('Could not create a share link.');
   }

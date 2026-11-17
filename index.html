@@ -53,11 +53,28 @@
     <span class="icon">↗</span>
   </button>
   <div id="sharePopup" class="add-menu share-popup" hidden>
+    <div id="shareNameRow" class="share-popup-row">
+      <input type="text" id="shareNameInput" placeholder="name this sketch (optional)" />
+    </div>
     <div class="share-popup-label">anyone with this link can view and edit</div>
     <div class="share-popup-row">
       <input type="text" id="shareLink" readonly />
       <button type="button" id="copyLinkBtn">copy</button>
     </div>
+  </div>
+
+  <button id="sketchbookTab" class="sketchbook-tab" title="Sketchbook" aria-label="Sketchbook">+ sketchbook</button>
+
+  <div id="createBookPopup" class="add-menu book-popup" hidden>
+    <div class="share-popup-label">name this sketchbook (optional)</div>
+    <div class="share-popup-row">
+      <input type="text" id="bookNameInput" placeholder="sketchbook name" />
+    </div>
+    <button type="button" id="createBookBtn" class="add-menu-option">create sketchbook</button>
+  </div>
+
+  <div id="tray" class="tray" hidden>
+    <div id="trayList" class="tray-list"></div>
   </div>
 
   <div id="toast" class="toast" hidden></div>
