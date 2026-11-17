@@ -58,7 +58,7 @@
     </div>
     <button type="button" id="createLinkBtn" class="add-menu-option" hidden>create link</button>
     <div id="shareLinkSection" hidden>
-      <div id="shareLinkLabel" class="share-popup-label">anyone with this link can view and edit</div>
+      <div class="share-popup-label">anyone with this link can view and edit</div>
       <div class="share-popup-row">
         <input type="text" id="shareLink" readonly />
         <button type="button" id="copyLinkBtn">copy</button>
@@ -77,6 +77,10 @@
   </div>
 
   <div id="tray" class="tray" hidden>
+    <div class="share-popup-row tray-link-row">
+      <input type="text" id="trayLinkInput" readonly />
+      <button type="button" id="trayCopyBtn">copy</button>
+    </div>
     <div id="trayList" class="tray-list"></div>
   </div>
 

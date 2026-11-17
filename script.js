@@ -22,7 +22,6 @@ const shareNameRow = document.getElementById('shareNameRow');
 const shareNameInput = document.getElementById('shareNameInput');
 const createLinkBtn = document.getElementById('createLinkBtn');
 const shareLinkSection = document.getElementById('shareLinkSection');
-const shareLinkLabel = document.getElementById('shareLinkLabel');
 const shareLinkInput = document.getElementById('shareLink');
 const copyLinkBtn = document.getElementById('copyLinkBtn');
 const sketchbookTab = document.getElementById('sketchbookTab');
@@ -30,6 +29,8 @@ const createBookPopup = document.getElementById('createBookPopup');
 const bookNameInput = document.getElementById('bookNameInput');
 const createBookBtn = document.getElementById('createBookBtn');
 const tray = document.getElementById('tray');
+const trayLinkInput = document.getElementById('trayLinkInput');
+const trayCopyBtn = document.getElementById('trayCopyBtn');
 const trayList = document.getElementById('trayList');
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1331,10 +1332,8 @@ createBookBtn.addEventListener('click', async () => {
     currentSketchBookIds = [id];
     updateSketchbookTabState();
     createBookPopup.hidden = true;
-    showSharePopup(
-      `${location.origin}${location.pathname}?book=${id}`,
-      'this is your sketchbook link — opens straight into this sketch, with the tray expanded'
-    );
+    bookNameInput.value = '';
+    await openTray(id);
   } catch (err) {
     showToast('Could not create a sketchbook.');
   }
@@ -1352,6 +1351,7 @@ async function openTray(bookId) {
       return;
     }
     const book = await res.json();
+    trayLinkInput.value = `${location.origin}${location.pathname}?book=${bookId}`;
     renderTray(bookId, book);
     tray.hidden = false;
   } catch (err) {
@@ -1406,9 +1406,14 @@ async function addNewSketchToBook(bookId) {
       body: JSON.stringify({ sketch: { id, name: '' } }),
     });
 
+    // the new sketch is already known to be empty — no need to re-fetch it, just adopt it directly
+    deserializeCanvas({ nodes: [] });
+    currentSketchId = id;
+    currentSketchName = '';
+    currentSketchBookIds = [bookId];
+    updateSketchbookTabState();
     history.pushState(null, '', `?sketch=${id}`);
     tray.hidden = true;
-    await loadSketchById(id);
   } catch (err) {
     showToast('Could not add a new sketch to this sketchbook.');
   }
@@ -1464,11 +1469,10 @@ function flushPendingSaves() {
 }
 
 // shows the final "here's your link" state — always the last step, never the name-prompt step
-function showSharePopup(url, label) {
+function showSharePopup(url) {
   shareNameRow.hidden = true;
   createLinkBtn.hidden = true;
   shareLinkSection.hidden = false;
-  shareLinkLabel.textContent = label || 'anyone with this link can view and edit';
   shareLinkInput.value = url;
   sharePopup.hidden = false;
   shareLinkInput.focus();
@@ -1535,6 +1539,21 @@ copyLinkBtn.addEventListener('click', async () => {
   setTimeout(() => {
     copyLinkBtn.textContent = 'copy';
     copyLinkBtn.classList.remove('copied');
+  }, 1500);
+});
+
+trayCopyBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(trayLinkInput.value);
+  } catch (err) {
+    trayLinkInput.select();
+    document.execCommand('copy');
+  }
+  trayCopyBtn.textContent = 'copied!';
+  trayCopyBtn.classList.add('copied');
+  setTimeout(() => {
+    trayCopyBtn.textContent = 'copy';
+    trayCopyBtn.classList.remove('copied');
   }, 1500);
 });
 
