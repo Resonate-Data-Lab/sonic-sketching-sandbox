@@ -850,13 +850,15 @@ function pointsToPathData(points, offsetX, offsetY) {
 
 function startStroke(e) {
   e.preventDefault();
-  const points = [{ x: e.clientX, y: e.clientY }];
+  // capture points in canvas-space right away, so the live preview (which
+  // lives inside the scrolled canvas) lines up with the cursor
+  const points = [toCanvasPoint(e.clientX, e.clientY)];
   const previewPath = document.createElementNS(SVG_NS, 'path');
   previewPath.setAttribute('d', pointsToPathData(points, 0, 0));
   drawPreview.appendChild(previewPath);
 
   function onMove(ev) {
-    points.push({ x: ev.clientX, y: ev.clientY });
+    points.push(toCanvasPoint(ev.clientX, ev.clientY));
     previewPath.setAttribute('d', pointsToPathData(points, 0, 0));
   }
   function onUp() {
@@ -869,12 +871,8 @@ function startStroke(e) {
   document.addEventListener('pointerup', onUp);
 }
 
-function finalizeStroke(rawPoints) {
-  if (rawPoints.length < 2) return;
-
-  // the live preview tracks raw client points; only the finalized, permanent
-  // stroke needs to be converted into canvas-space
-  const points = rawPoints.map((p) => toCanvasPoint(p.x, p.y));
+function finalizeStroke(points) {
+  if (points.length < 2) return;
 
   const pad = 6;
   const xs = points.map((p) => p.x);
