@@ -242,6 +242,66 @@ function autoScrollForDrag(clientX, clientY) {
   else if (clientY > rect.bottom - EDGE_SCROLL_ZONE) board.scrollTop += EDGE_SCROLL_SPEED;
 }
 
+// ---------- two-finger scrolling on touch screens ----------
+
+// whatever one-finger interaction is in progress (a stroke, a drag, a marquee)
+// registers how to abort itself here, so a second finger landing can undo it
+// instead of leaving a stray dot or a small nudge behind
+let cancelActiveGesture = null;
+
+const panTouches = new Map(); // pointerId -> { x, y }, only touches that started on the board
+let isPanning = false;
+let lastPanMid = null;
+
+function panMidpoint() {
+  const pts = Array.from(panTouches.values());
+  return {
+    x: pts.reduce((sum, p) => sum + p.x, 0) / pts.length,
+    y: pts.reduce((sum, p) => sum + p.y, 0) / pts.length,
+  };
+}
+
+// these run in the capture phase on window, ahead of every other pointer
+// handler, so while panning no other handler ever sees these touches
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch' || !board.contains(e.target)) return;
+  panTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (panTouches.size === 2 && !isPanning) {
+    isPanning = true;
+    if (cancelActiveGesture) cancelActiveGesture();
+    cancelActiveGesture = null;
+  }
+  if (isPanning) {
+    lastPanMid = panMidpoint();
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }
+}, true);
+
+window.addEventListener('pointermove', (e) => {
+  if (!panTouches.has(e.pointerId)) return;
+  panTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!isPanning) return;
+  e.stopImmediatePropagation();
+  if (panTouches.size < 2) return; // one finger left over from a pan: ignore it until it lifts
+  const mid = panMidpoint();
+  board.scrollLeft -= mid.x - lastPanMid.x;
+  board.scrollTop -= mid.y - lastPanMid.y;
+  lastPanMid = mid;
+}, true);
+
+function endPanTouch(e) {
+  if (!panTouches.has(e.pointerId)) return;
+  panTouches.delete(e.pointerId);
+  if (!isPanning) return;
+  e.stopImmediatePropagation();
+  if (panTouches.size === 0) isPanning = false;
+  else lastPanMid = panMidpoint();
+}
+window.addEventListener('pointerup', endPanTouch, true);
+window.addEventListener('pointercancel', endPanTouch, true);
+
 // ---------- placing new sounds near the button ----------
 
 function nextSpawnPosition() {
@@ -380,6 +440,16 @@ function makeDraggable(el, { onClick } = {}) {
       top: parseFloat(item.style.top),
     }));
     el.setPointerCapture(e.pointerId);
+
+    const pointerId = e.pointerId;
+    cancelActiveGesture = () => {
+      dragging = false;
+      startPositions.forEach(({ item, left, top }) => {
+        item.style.left = `${left}px`;
+        item.style.top = `${top}px`;
+      });
+      if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+    };
   });
 
   el.addEventListener('pointermove', (e) => {
@@ -406,6 +476,7 @@ function makeDraggable(el, { onClick } = {}) {
   el.addEventListener('pointerup', (e) => {
     if (!dragging) return;
     dragging = false;
+    cancelActiveGesture = null;
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (moved) {
       clearSelection();
@@ -839,9 +910,15 @@ function startMarquee(e) {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     if (box) box.remove();
+    cancelActiveGesture = null;
   }
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
+  cancelActiveGesture = () => {
+    onUp();
+    clearSelection();
+    keepSelected.forEach((item) => item.classList.add('selected'));
+  };
 }
 
 function pointsToPathData(points, offsetX, offsetY) {
@@ -865,10 +942,16 @@ function startStroke(e) {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     previewPath.remove();
+    cancelActiveGesture = null;
     finalizeStroke(points);
   }
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
+  cancelActiveGesture = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    previewPath.remove();
+  };
 }
 
 function finalizeStroke(points) {
