@@ -881,8 +881,11 @@ function startMarquee(e) {
     const y = Math.min(startY, cy);
     const w = Math.abs(cx - startX);
     const h = Math.abs(cy - startY);
-    box.style.left = `${x}px`;
-    box.style.top = `${y}px`;
+    // the box lives inside the scrolled canvas, so it's placed in canvas-space;
+    // the returned rect stays in client-space to compare against getBoundingClientRect
+    const corner = toCanvasPoint(x, y);
+    box.style.left = `${corner.x}px`;
+    box.style.top = `${corner.y}px`;
     box.style.width = `${w}px`;
     box.style.height = `${h}px`;
     return { left: x, top: y, right: x + w, bottom: y + h };
@@ -902,7 +905,7 @@ function startMarquee(e) {
       moved = true;
       box = document.createElement('div');
       box.className = 'marquee';
-      board.appendChild(box);
+      canvas.appendChild(box);
     }
     applySelection(updateBox(ev.clientX, ev.clientY));
   }
