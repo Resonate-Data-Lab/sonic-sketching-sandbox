@@ -839,8 +839,9 @@ html, body {
 .image-box {
   position: absolute;
   width: max-content; /* same fix as .text-box: size to the image, not available edge space */
-  max-width: 360px;
-  max-height: 360px;
+  /* one fixed max size on every device, so a sketch looks the same on phone and laptop */
+  max-width: 600px;
+  max-height: 600px;
   cursor: grab;
   touch-action: none;
   z-index: 4;
@@ -853,21 +854,9 @@ html, body {
 
 .image-box img {
   display: block;
-  max-width: 360px;
-  max-height: 360px;
+  max-width: 600px;
+  max-height: 600px;
   pointer-events: none;
-}
-
-@media (min-width: 768px) {
-  .image-box {
-    max-width: 600px;
-    max-height: 600px;
-  }
-
-  .image-box img {
-    max-width: 600px;
-    max-height: 600px;
-  }
 }
 
 .image-box.selected {
