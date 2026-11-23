@@ -687,6 +687,24 @@ html, body {
   width: 100%;
 }
 
+/* a faint tick under the middle of sliders whose center is the default (speed, volume) */
+.sound-node .fx-popup .fx-centered {
+  position: relative;
+  display: block;
+}
+
+.sound-node .fx-popup .fx-centered::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 1px;
+  height: 5px;
+  background: var(--line);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 .sound-node .fx-popup .fx-reverse-row {
   flex-direction: row;
   align-items: center;

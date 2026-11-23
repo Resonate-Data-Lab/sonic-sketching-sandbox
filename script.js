@@ -347,7 +347,7 @@ async function copySelection() {
             relY,
             blob,
             noteText: note ? note.textContent : '',
-            fx: { speed: el.fxSpeed, reverb: el.fxReverb, reverse: el.fxReverse },
+            fx: { speed: el.fxSpeed, volume: el.fxVolume, reverb: el.fxReverb, reverse: el.fxReverse },
           };
         }
         if (el.classList.contains('stroke')) {
@@ -545,6 +545,7 @@ function playNodeSound(node, { onProgress, registerSource, unregisterSource } = 
   return decodeNodeBuffer(node).then((buffer) => {
     const speed = node.fxSpeed || 1;
     const reverbAmount = node.fxReverb || 0;
+    const volumeDb = node.fxVolume || 0;
 
     let sourceBuffer = buffer;
     if (node.fxReverse) {
@@ -556,6 +557,12 @@ function playNodeSound(node, { onProgress, registerSource, unregisterSource } = 
     source.buffer = sourceBuffer;
     source.playbackRate.value = speed;
 
+    // volume is stored in decibels (0 = unchanged), so the slider's center is
+    // "as recorded" and equal distances either side feel equally louder/quieter
+    const volumeGain = ctx.createGain();
+    volumeGain.gain.value = Math.pow(10, volumeDb / 20);
+    source.connect(volumeGain);
+
     const dryGain = ctx.createGain();
     dryGain.gain.value = 1 - reverbAmount;
     const wetGain = ctx.createGain();
@@ -563,8 +570,8 @@ function playNodeSound(node, { onProgress, registerSource, unregisterSource } = 
     const convolver = ctx.createConvolver();
     convolver.buffer = getReverbImpulse(ctx);
 
-    source.connect(dryGain).connect(ctx.destination);
-    source.connect(convolver).connect(wetGain).connect(ctx.destination);
+    volumeGain.connect(dryGain).connect(ctx.destination);
+    volumeGain.connect(convolver).connect(wetGain).connect(ctx.destination);
 
     const startTime = ctx.currentTime;
     const playDuration = sourceBuffer.duration / speed;
@@ -592,6 +599,16 @@ function playNodeSound(node, { onProgress, registerSource, unregisterSource } = 
 
 // ---------- sound nodes: draggable, playable, annotatable ----------
 
+const VOLUME_RANGE_DB = 12; // slider goes this many dB quieter/louder either side of "as recorded"
+
+// wraps a slider whose middle is its default, adding a faint tick under the center
+function centerTicked(input) {
+  const wrap = document.createElement('span');
+  wrap.className = 'fx-centered';
+  wrap.appendChild(input);
+  return wrap;
+}
+
 function createSoundNode(x, y, url, id) {
   const node = document.createElement('div');
   node.className = 'sound-node';
@@ -600,6 +617,7 @@ function createSoundNode(x, y, url, id) {
   node.dataset.url = url;
   node.dataset.objectId = id || crypto.randomUUID();
   node.fxSpeed = 1;
+  node.fxVolume = 0;
   node.fxReverb = 0;
   node.fxReverse = false;
 
@@ -621,7 +639,7 @@ function createSoundNode(x, y, url, id) {
 
   const knob = document.createElement('div');
   knob.className = 'knob';
-  knob.title = 'Edit sound (speed, reverb, reverse)';
+  knob.title = 'Edit sound (speed, volume, reverb, reverse)';
 
   const fxPopup = document.createElement('div');
   fxPopup.className = 'fx-popup';
@@ -636,7 +654,18 @@ function createSoundNode(x, y, url, id) {
   speedInput.max = '1.5';
   speedInput.step = '0.01';
   speedInput.value = '1';
-  speedLabel.appendChild(speedInput);
+  speedLabel.appendChild(centerTicked(speedInput));
+
+  const volumeLabel = document.createElement('label');
+  volumeLabel.textContent = 'volume';
+  const volumeInput = document.createElement('input');
+  volumeInput.type = 'range';
+  volumeInput.className = 'fx-volume';
+  volumeInput.min = String(-VOLUME_RANGE_DB);
+  volumeInput.max = String(VOLUME_RANGE_DB);
+  volumeInput.step = '0.5';
+  volumeInput.value = '0';
+  volumeLabel.appendChild(centerTicked(volumeInput));
 
   const reverbLabel = document.createElement('label');
   reverbLabel.textContent = 'reverb';
@@ -661,7 +690,7 @@ function createSoundNode(x, y, url, id) {
   resetBtn.className = 'fx-reset';
   resetBtn.textContent = 'reset';
 
-  fxPopup.append(speedLabel, reverbLabel, reverseLabel, resetBtn);
+  fxPopup.append(speedLabel, volumeLabel, reverbLabel, reverseLabel, resetBtn);
 
   const note = document.createElement('div');
   note.className = 'note';
@@ -678,16 +707,18 @@ function createSoundNode(x, y, url, id) {
 
   // lets loading/duplicating/pasting set speed/reverb/reverse on an existing node,
   // keeping the JS state and the slider/checkbox UI in sync in one place
-  node.setFx = ({ speed = 1, reverb = 0, reverse = false }) => {
+  node.setFx = ({ speed = 1, volume = 0, reverb = 0, reverse = false }) => {
     node.fxSpeed = speed;
+    node.fxVolume = volume;
     node.fxReverb = reverb;
     node.fxReverse = reverse;
     speedInput.value = speed;
+    volumeInput.value = volume;
     reverbInput.value = reverb;
     reverseInput.checked = reverse;
   };
 
-  wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput, resetBtn);
+  wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, volumeInput, reverbInput, reverseInput, resetBtn);
   scheduleObjectSave(node);
   return node;
 }
@@ -708,7 +739,7 @@ document.addEventListener('pointerdown', (e) => {
   closeFxPopup();
 });
 
-function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, reverbInput, reverseInput, resetBtn) {
+function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, volumeInput, reverbInput, reverseInput, resetBtn) {
   let activePlays = 0;
   const activeSources = [];
 
@@ -800,6 +831,10 @@ function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, rever
     node.fxSpeed = parseFloat(speedInput.value);
     scheduleObjectSave(node);
   });
+  volumeInput.addEventListener('input', () => {
+    node.fxVolume = parseFloat(volumeInput.value);
+    scheduleObjectSave(node);
+  });
   reverbInput.addEventListener('input', () => {
     node.fxReverb = parseFloat(reverbInput.value);
     scheduleObjectSave(node);
@@ -810,7 +845,7 @@ function wireUpNode(node, del, dup, note, bars, knob, fxPopup, speedInput, rever
   });
   resetBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    node.setFx({ speed: 1, reverb: 0, reverse: false });
+    node.setFx({ speed: 1, volume: 0, reverb: 0, reverse: false });
     scheduleObjectSave(node);
   });
 
@@ -836,7 +871,7 @@ async function duplicateNode(sourceNode, sourceNote) {
     const newNode = createSoundNode(x, y, url);
     const newNote = newNode.querySelector('.note');
     if (newNote) newNote.textContent = sourceNote.textContent;
-    newNode.setFx({ speed: sourceNode.fxSpeed, reverb: sourceNode.fxReverb, reverse: sourceNode.fxReverse });
+    newNode.setFx({ speed: sourceNode.fxSpeed, volume: sourceNode.fxVolume, reverb: sourceNode.fxReverb, reverse: sourceNode.fxReverse });
   } catch (err) {
     showToast('Could not duplicate that sound.');
   }
@@ -1271,6 +1306,7 @@ async function serializeOne(el) {
       note: note ? note.textContent : '',
       audio: { mimeType: blob.type || 'audio/webm', base64 },
       speed: el.fxSpeed,
+      volume: el.fxVolume,
       reverb: el.fxReverb,
       reverse: el.fxReverse,
     };
@@ -1317,7 +1353,7 @@ function deserializeCanvas(data) {
       node.style.transform = `rotate(${n.rotation || 0}deg)`;
       const note = node.querySelector('.note');
       if (note) note.textContent = n.note || '';
-      node.setFx({ speed: n.speed || 1, reverb: n.reverb || 0, reverse: n.reverse || false });
+      node.setFx({ speed: n.speed || 1, volume: n.volume || 0, reverb: n.reverb || 0, reverse: n.reverse || false });
     } else if (n.type === 'stroke') {
       createStrokeElement(n.x, n.y, n.width, n.height, n.pathD, n.id);
     } else if (n.type === 'text') {
